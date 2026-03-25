@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#
+# openloop_cc_docker - Run openloop with docker containerization
+# Usage: openloop_cc_docker "persona" "prompt" ["system_prompt"] ["mode"]
+#   2 args:  persona, prompt
+#   3 args:  persona, prompt, system_prompt
+#   4 args:  persona, prompt, system_prompt, mode
+#
+# Supports stdin streaming
+#
+
+IMAGE="yolo_devcontainer"
+
+# Handle optional parameters
+PERSONA=""
+if [ $# -ge 1 ]; then
+    PERSONA="$1"
+fi
+PROMPT=""
+if [ $# -ge 2 ]; then
+    PROMPT="$2"
+fi
+SYSTEM_PROMPT=""
+if [ $# -ge 3 ]; then
+    SYSTEM_PROMPT="$3"
+fi
+MODE=""
+if [ $# -ge 4 ]; then
+    MODE="$4"
+fi
+
+# Validate required parameters
+if [ -z "$PERSONA" ]; then
+    echo "Error: PERSONA is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+if [ -z "$PROMPT" ]; then
+    echo "Error: PROMPT is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+
+
+ROOT="$PWD"
+
+# Check that openloop directory exists
+if [ ! -d "$ROOT/openloop" ]; then
+    echo "Error: openloop directory not found in $ROOT" >&2
+    exit 1
+fi
+
+if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    PRJ="$ROOT"
+else
+    PRJ="$PWD/openloop/knowledge/$PERSONA"
+fi
+
+mkdir -p "$PRJ"
+
+# Capture piped stdin at top level (before any subshells)
+YOLO_STDIN=""
+if [ -p /dev/stdin ]; then
+    YOLO_STDIN=$(cat)
+fi
+
+make_prompt_text() {
+    local PROMPT="$1"
+
+    if [ -n "$YOLO_STDIN" ]; then
+        PROMPT=$(cat <<EOF
+${1}
+
+# Reports
+${YOLO_STDIN}
+EOF
+)
+    fi
+
+    echo "$PROMPT"
+}
+
+PROMPT_TEXT=$(make_prompt_text "$PROMPT")
+
+prepare_agent() {
+    #
+    # https://opencode.ai/docs/agents#markdown
+    #
+    local mode="$1"
+    local system_prompt="$2"
+    # Mac issue: must write to the file directly. Mapping a file via `-v` into `$ROOT:ro` does not work on mac.
+    local agent_file="$ROOT/.opencode/agents/${mode}.md"
+
+    mkdir -p "$ROOT/.opencode/agents"
+
+    if [ -f "$agent_file" ]; then
+        # yq is trash:
+        # yq -i '.mode = "primary"' "$agent_file"
+        # yq -i --front-matter process '.mode = "primary"' "$agent_file"
+        if grep -q '^mode:' "$agent_file"; then
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' 's/^mode:.*/mode: primary/' "$agent_file"
+            else
+                sed -i 's/^mode:.*/mode: primary/' "$agent_file"
+            fi
+        fi
+
+        if [ -n "$system_prompt" ]; then
+            local line_num
+            line_num=$(grep -n '^---' "$agent_file" | head -2 | tail -1 | cut -d: -f1)
+            if [ -n "$line_num" ]; then
+                head -n "$line_num" "$agent_file" > "${agent_file}.tmp"
+                echo "" >> "${agent_file}.tmp"
+                echo "$system_prompt" >> "${agent_file}.tmp"
+                mv "${agent_file}.tmp" "$agent_file"
+            fi
+        fi
+    else
+        cat > "$agent_file" <<EOF
+---
+description: Agent for ${mode}
+mode: primary
+permission:
+  question: deny
+---
+
+${system_prompt:-You are in ${mode} mode.}
+EOF
+    fi
+}
+
+# Determine volume mounts based on mode
+VOLUME_MOUNTS=()
+if [ "${MODE}" == "plan" ]; then
+    VOLUME_MOUNTS=(-v "$ROOT:$ROOT:ro")
+else
+    VOLUME_MOUNTS=(-v "$ROOT:$ROOT" -v "$ROOT/openloop:$ROOT/openloop:ro")
+fi
+
+if [ -n "$MODE" ] && [ "$MODE" == "plan" ]; then
+    prepare_agent "$PERSONA" "$SYSTEM_PROMPT"
+    MODE="$PERSONA"
+fi
+
+if [ -n "$MODE" ]; then
+    # `bash -c` required or $PROMPT_TEXT fails to expand from ENV
+    OCRUN=("bash" "-c" "opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
+else
+    # `bash -c` required or $PROMPT_TEXT fails to expand from ENV
+    OCRUN=("bash" "-c" "opencode run \"\$PROMPT_TEXT\"")
+fi
+
+
+#
+# Maintaining multiple subscriptions & api keys.
+# This is ur default opencode folder for oc_docker. Create new script openloop_oc_docker-X and update this folder to $SHARE/opencode-X.
+# Then specify `agent: oc_docker-X` in personas or workflows.
+SHARE="$HOME/.local/share"
+mkdir -p $SHARE/opencode
+AUTH_FILE="$SHARE/opencode/auth.json"
+if [ ! -f "$AUTH_FILE" ]; then
+    echo '{}' > "$AUTH_FILE"
+fi
+# Apply similar logic to config filename.
+# This config file specified default model & MCPs to use.
+# While the $SHARE/opencode contains `auth.json` with subscription or API key.
+CONFIG="$SHARE/yolo"
+mkdir -p $CONFIG
+CONFIG_FILE="$CONFIG/oc_opencode.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+    cat > "$CONFIG_FILE" <<'EOF'
+{
+    "$schema": "https://opencode.ai/config.json"
+}
+EOF
+fi
+
+/usr/local/bin/docker run --rm \
+    -v /etc/localtime:/etc/localtime:ro \
+    -v "$AUTH_FILE:/home/node/.local/share/opencode/auth.json" \
+    -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \
+    -e "PROMPT_TEXT=$PROMPT_TEXT" \
+    "${VOLUME_MOUNTS[@]}" \
+    -w "$PRJ" \
+    $IMAGE "${OCRUN[@]}"

@@ -1,0 +1,12 @@
+{
+  "ask" : "What date is today?",
+  "levels" : [
+    [
+      "pirate"
+    ]
+  ],
+  "name" : "Wroom wroom, just a pirate test",
+  "every_secs" : 0,
+  "agent" : "oc_docker",
+  "desc" : "Real savvy"
+}

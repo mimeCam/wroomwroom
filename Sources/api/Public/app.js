@@ -1,0 +1,2513 @@
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DEBUG: DOMContentLoaded, app.js loaded');
+    const content = document.getElementById('content');
+    const refreshBtn = document.getElementById('refreshBtn');
+    console.log('DEBUG: content element:', content);
+    console.log('DEBUG: refreshBtn element:', refreshBtn);
+
+    let autoRefreshInterval;
+    let countdownInterval;
+    let countdownValue = 30;
+    let personaCache = {};
+    let workflowCache = {};
+    let instanceStateCache = {};
+    let currentInlineEditor = null;
+    let expandedInstances = new Set();
+    let instancePersonas = {};
+    let instanceWorkflows = {};
+    let instancePersonaStats = {};
+    let instancePersonaLogs = {};
+    let instanceManualWorkflows = {};
+    let globalDragState = { active: false, personaId: null, personaName: null };
+    let currentLang = localStorage.getItem('openloop-lang') || 'en';
+    let currentHelpDoc = null;
+
+    function setEditingState(personaList, editingNode) {
+        personaList?.classList.add('editing');
+        editingNode?.classList.add('is-editing');
+    }
+
+    function clearEditingState() {
+        document.querySelector('.persona-list.editing')?.classList.remove('editing');
+        document.querySelector('.persona-node.is-editing')?.classList.remove('is-editing');
+    }
+
+    function getInstanceColor(path) {
+        let hash = 0;
+        for (let i = 0; i < path.length; i++) {
+            hash = path.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash % 360);
+        return `hsl(${hue}, 35%, 92%)`;
+    }
+
+    async function fetchInstances(isAutoRefresh = false) {
+        console.log('DEBUG: fetchInstances called, isAutoRefresh:', isAutoRefresh);
+        if (isAutoRefresh && currentInlineEditor) {
+            console.log('DEBUG: Skipping fetch due to inline editor');
+            return;
+        }
+
+        try {
+            if (!isAutoRefresh) {
+                content.innerHTML = '<div class="loading">Loading instances...<div class="loading-hint">To launch an instance, run <code>openloop</code> from your project folder in the terminal</div><div class="loading-hint">Instances are launched by running <code>openloop</code> - launch button appears for stopped/unused instances</div></div>';
+            }
+
+            console.log('DEBUG: Fetching /api/instances...');
+            const response = await fetch('/api/instances');
+            console.log('DEBUG: Response received, status:', response.status);
+            const data = await response.json();
+
+            console.log('DEBUG: Raw API response:', data);
+
+            if (data.instances && data.instances.length > 0) {
+                const tree = buildTreeFromPaths(data.instances);
+                await Promise.all(tree.instances.map(instance => fetchPersonaCount(instance.fullPath)));
+                await Promise.all(tree.instances.map(instance => fetchWorkflowCount(instance.fullPath)));
+                renderTree(tree);
+            } else {
+                content.innerHTML = '<div class="empty-state">No instances found<div class="empty-hint">To launch an instance, run <code>openloop</code> from your project folder in the terminal</div></div>';
+            }
+        } catch (error) {
+            console.error('Failed to fetch instances:', error);
+            console.error('Error details:', error.message, error.stack);
+            if (!isAutoRefresh) {
+                content.innerHTML = `<div class="error">Failed to load instances: ${error.message}</div>`;
+            }
+        }
+    }
+
+    function buildTreeFromPaths(instancesData) {
+        const instances = instancesData.map(instanceData => {
+            const path = instanceData.path;
+            const parts = path.split('/').filter(c => c.length > 0);
+            const name = parts[parts.length - 1] || path;
+            const isExpanded = expandedInstances.has(path);
+            const state = instanceData.state || instanceStateCache[path];
+            const stateAvailable = state && state.lastLoopAtUnixMs !== null;
+            if (stateAvailable) {
+                instanceStateCache[path] = state;
+                console.log('DEBUG: Instance state for', path, ':', state);
+            }
+            return {
+                name: name,
+                fullPath: path,
+                expanded: isExpanded,
+                personasLoaded: isExpanded && instancePersonas[path] !== undefined,
+                personas: instancePersonas[path] || [],
+                workflowsLoaded: isExpanded && instanceWorkflows[path] !== undefined,
+                workflows: instanceWorkflows[path] || [],
+                state: state
+            };
+        });
+
+        return {
+            instances: instances
+        };
+    }
+
+    function renderTree(tree) {
+        const html = `
+            <div class="tree-container" role="tree" aria-label="Instance tree">
+                <div class="instances-list">
+                    ${tree.instances.map(instance => renderInstanceNode(instance)).join('')}
+                </div>
+            </div>
+        `;
+        content.innerHTML = html;
+
+        tree.instances.filter(i => i.expanded).forEach(instance => {
+            const node = document.querySelector(`.instance-node[data-path="${escapeHtml(instance.fullPath)}"]`);
+            if (node) {
+                loadManualWorkflowsForInstance(instance.fullPath, node);
+            }
+        });
+    }
+
+    function formatPath(path, instanceName) {
+        const dirPath = path || '/';
+        if (dirPath.length <= 40) {
+            return dirPath;
+        }
+        const parts = dirPath.split('/');
+        if (parts.length <= 3) return dirPath;
+        return '/' + parts[1] + '/.../' + parts.slice(-2).join('/');
+    }
+
+    function renderInstanceNode(instance) {
+        const pathBreadcrumb = formatPath(instance.fullPath, instance.name);
+        const bgColor = getInstanceColor(instance.fullPath);
+
+        let statusHtml = '';
+        let isRunning = false;
+        let expandedContentHtml = '';
+        let personaCountHtml = '';
+        let workflowCountHtml = '';
+
+        const stateAvailable = instance.state && instance.state.lastLoopAtUnixMs !== null;
+
+        if (stateAvailable) {
+            const now = Date.now();
+            const lastLoopDate = new Date(instance.state.lastLoopAtUnixMs);
+            const secondsSinceLastLoop = (now - lastLoopDate.getTime()) / 1000;
+            isRunning = secondsSinceLastLoop < 120;
+            console.log('DEBUG: Instance', instance.fullPath, '- lastLoopAtUnixMs:', instance.state.lastLoopAtUnixMs, 'lastLoopDate:', lastLoopDate, 'secondsSinceLastLoop:', secondsSinceLastLoop);
+            statusHtml = `<span class="instance-status ${isRunning ? 'running' : 'stopped'}" title="${isRunning ? 'Running' : 'Stopped'}">${isRunning ? '' : '∞'}</span>`;
+        } else {
+            console.log('DEBUG: Instance', instance.fullPath, '- No state data or failed to load');
+            statusHtml = `<span class="instance-status stopped" title="Offline">∞</span>`;
+        }
+
+        personaCountHtml = getPersonaCountHtml(instance.fullPath, instance.state);
+        workflowCountHtml = getWorkflowCountHtml(instance.fullPath, instance.state);
+
+        if (instance.expanded) {
+            const personasHtml = instance.personas.length > 0
+                ? instance.personas.map(p => {
+                    const stat = getPersonaStats(instance.fullPath, p.id);
+                    return `
+                    <div class="persona-node"
+                         role="treeitem"
+                         draggable="true"
+                         data-instance-path="${escapeHtml(instance.fullPath || '')}"
+                         data-persona-id="${escapeHtml(p.id)}"
+                         data-persona-name="${escapeHtml(p.name)}">
+                        <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
+                        ${getAvatarHtml(p.avatar)}
+                        <span class="persona-label">${escapeHtml(p.name)}</span>
+                        <span class="persona-role">${escapeHtml(p.role || '')}</span>
+                        <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
+                            <span class="stat-errors" title="Errors">${stat.errors}</span>
+                            <span class="stat-success" title="Success">${stat.success}</span>
+                            <span class="stat-total">/ ${stat.total}</span>
+                        </div>
+                        <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
+                    </div>
+                `}).join('')
+                : '<div class="subview-empty">No personas</div>';
+
+            const workflowsHtml = instance.workflows.length > 0
+                ? instance.workflows.map(w => `
+                    <div class="workflow-node"
+                         data-instance-path="${escapeHtml(instance.fullPath || '')}"
+                         data-workflow-id="${escapeHtml(w.id)}">
+                        <span class="workflow-icon">○</span>
+                        <div class="workflow-content">
+                            <div class="workflow-id-row">
+                                <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
+                            </div>
+                            <span class="workflow-label">${escapeHtml(w.name)}</span>
+                            <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
+                            <button class="workflow-launch-btn" data-instance-path="${escapeHtml(instance.fullPath)}" data-workflow-id="${escapeHtml(w.id)}" data-workflow-name="${escapeHtml(w.name)}" data-workflow-ask="${escapeHtml(w.ask || '')}" title="Launch workflow manually">▶ Launch</button>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="subview-empty">No workflows</div>';
+
+            expandedContentHtml = `
+                <div class="expanded-content">
+                    <div class="subview personas-column">
+                        <div class="subview-header">Personas</div>
+                        <div class="persona-list">${personasHtml}</div>
+                        <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(instance.fullPath)}">+ Add Persona</button>
+                    </div>
+                    <div class="subview workflows-column">
+                        <div class="subview-header">Workflows</div>
+                        <div class="workflow-list">${workflowsHtml}</div>
+                        <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(instance.fullPath)}">+ Add Workflow</button>
+                        <div class="manual-workflows-section">
+                            <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(instance.fullPath)}">Refresh</button></div>
+                            <div class="manual-workflows-list" data-instance-path="${escapeHtml(instance.fullPath)}">
+                                <div class="loading-manual-workflows">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="instance-node ${instance.expanded ? 'expanded' : ''}"
+                 role="treeitem"
+                 aria-expanded="${instance.expanded}"
+                 data-path="${instance.fullPath}">
+                <div class="instance-row" style="background-color: ${bgColor}">
+                    <div class="instance-header">
+                        <span class="instance-toggle">${instance.expanded ? '▾' : '▸'}</span>
+                        <span class="instance-icon">●</span>
+                         <span class="instance-name">${escapeHtml(instance.name)}</span><span class="info-icon" data-doc="instance" title="What is an instance?">ⓘ</span>
+                        ${statusHtml}
+                    </div>
+                    <div class="instance-footer">
+                        <span class="instance-path" title="${escapeHtml(instance.fullPath)}">${escapeHtml(pathBreadcrumb)}</span>
+                        ${personaCountHtml}
+                        ${workflowCountHtml}
+                    </div>
+                </div>
+                ${expandedContentHtml}
+            </div>
+        `;
+    }
+
+    async function fetchPersonaCount(path) {
+        if (personaCache[path] !== undefined) return personaCache[path];
+        
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/personas`);
+            const data = await response.json();
+            personaCache[path] = data.personas ? data.personas.length : 0;
+            return personaCache[path];
+        } catch (error) {
+            console.error('Failed to fetch persona count:', error);
+            return 0;
+        }
+    }
+
+    async function fetchPersonas(path) {
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/personas`);
+            const data = await response.json();
+            return data.personas || [];
+        } catch (error) {
+            console.error('Failed to fetch personas:', error);
+            return [];
+        }
+    }
+
+    async function fetchWorkflowCount(path) {
+        if (workflowCache[path] !== undefined) return workflowCache[path];
+        
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/workflows`);
+            const data = await response.json();
+            workflowCache[path] = data.workflows ? data.workflows.length : 0;
+            return workflowCache[path];
+        } catch (error) {
+            console.error('Failed to fetch workflow count:', error);
+            return 0;
+        }
+    }
+
+    async function fetchWorkflows(path) {
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/workflows`);
+            const data = await response.json();
+            return data.workflows || [];
+        } catch (error) {
+            console.error('Failed to fetch workflows:', error);
+            return [];
+        }
+    }
+
+    async function fetchManualWorkflows(path) {
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/manual-workflows`);
+            const data = await response.json();
+            return data.workflows || [];
+        } catch (error) {
+            console.error('Failed to fetch manual workflows:', error);
+            return [];
+        }
+    }
+
+    async function launchManualWorkflow(path, workflowId, ask) {
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/manual-workflows`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    workflow_id: workflowId,
+                    ask: ask
+                })
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to launch workflow: ${response.statusText}`);
+            }
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Failed to launch manual workflow:', error);
+            throw error;
+        }
+    }
+
+    async function deleteManualWorkflow(path, runId, btn) {
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(path)}/manual-workflows/${encodeURIComponent(runId)}`, {
+                method: 'DELETE'
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to delete workflow: ${response.statusText}`);
+            }
+            const node = btn.closest('.manual-workflow-node');
+            if (node) {
+                node.remove();
+            }
+        } catch (error) {
+            console.error('Failed to delete manual workflow:', error);
+            alert(`Failed to remove: ${error.message}`);
+        }
+    }
+
+    async function loadManualWorkflowsForInstance(path, node) {
+        try {
+            const manualWorkflows = await fetchManualWorkflows(path);
+            instanceManualWorkflows[path] = manualWorkflows;
+
+            const container = node.querySelector('.manual-workflows-list[data-instance-path="' + escapeHtml(path) + '"]');
+            if (container) {
+                container.innerHTML = renderManualWorkflowsHtml(manualWorkflows, path);
+            }
+        } catch (error) {
+            console.error('Failed to load manual workflows:', error);
+            const container = node.querySelector('.manual-workflows-list[data-instance-path="' + escapeHtml(path) + '"]');
+            if (container) {
+                container.innerHTML = '<div class="subview-empty">Failed to load manual workflows</div>';
+            }
+        }
+    }
+
+    function renderManualWorkflowsHtml(workflows, path) {
+        if (workflows.length === 0) {
+            return '<div class="subview-empty">No manual workflows running</div>';
+        }
+
+        return workflows.sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).map(w => {
+            const statusClass = w.status === 'running' ? 'running' : (w.status === 'completed' ? 'completed' : 'failed');
+            const statusIcon = w.status === 'running' ? '⟳' : (w.status === 'completed' ? '✓' : '✗');
+            const startDate = new Date(w.started_at);
+            const timeStr = startDate.toLocaleTimeString() + ' ' + startDate.toLocaleDateString();
+
+            return `
+                <div class="manual-workflow-node" data-run-id="${escapeHtml(w.id)}" data-instance-path="${escapeHtml(path)}">
+                    <div class="manual-workflow-header">
+                        <span class="manual-workflow-status ${statusClass}" title="${w.status}">${statusIcon}</span>
+                        <span class="manual-workflow-workflow-id">${escapeHtml(w.workflow_id)}</span>
+                        <span class="manual-workflow-time">${escapeHtml(timeStr)}</span>
+                        <button class="manual-workflow-delete" data-run-id="${escapeHtml(w.id)}" data-instance-path="${escapeHtml(path)}" title="Remove">×</button>
+                    </div>
+                    <div class="manual-workflow-ask">${escapeHtml(w.ask)}</div>
+                    ${w.output ? `<div class="manual-workflow-output">${renderLogContent(w.output)}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    function openManualWorkflowLauncher(instancePath, workflowId, workflowName, workflowAsk, triggerBtn) {
+        closeManualWorkflowLauncher();
+
+        const launcherHtml = `
+            <div class="manual-workflow-launcher" data-instance-path="${escapeHtml(instancePath)}" data-workflow-id="${escapeHtml(workflowId)}">
+                <div class="launcher-header">
+                    <h3>Launch Workflow: ${escapeHtml(workflowName)}</h3>
+                    <button class="launcher-close-btn">&times;</button>
+                </div>
+                <div class="launcher-body">
+                    <div class="form-group">
+                        <label for="workflow-ask-input">Ask (task description):</label>
+                        <textarea id="workflow-ask-input" class="workflow-ask-input" rows="6" placeholder="Enter the task for this workflow...">${escapeHtml(workflowAsk)}</textarea>
+                    </div>
+                    <div class="launcher-actions">
+                        <button class="launcher-cancel-btn">Cancel</button>
+                        <button class="launcher-launch-btn">Launch</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const launcher = document.createElement('div');
+        launcher.className = 'inline-editor manual-workflow-launcher-wrapper';
+        launcher.innerHTML = launcherHtml;
+
+        if (triggerBtn && triggerBtn.closest('.workflow-node')) {
+            triggerBtn.closest('.workflow-node').parentNode.insertBefore(launcher, triggerBtn.closest('.workflow-node').nextSibling);
+        } else {
+            content.appendChild(launcher);
+        }
+
+        currentInlineEditor = launcher;
+
+        const closeBtn = launcher.querySelector('.launcher-close-btn');
+        const cancelBtn = launcher.querySelector('.launcher-cancel-btn');
+        const launchBtn = launcher.querySelector('.launcher-launch-btn');
+        const askInput = launcher.querySelector('#workflow-ask-input');
+
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeManualWorkflowLauncher();
+        });
+
+        cancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeManualWorkflowLauncher();
+        });
+
+        launchBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const ask = askInput.value.trim();
+
+            if (!ask) {
+                alert('Please enter a task description');
+                return;
+            }
+
+            launchBtn.disabled = true;
+            launchBtn.textContent = 'Launching...';
+
+            try {
+                await launchManualWorkflow(instancePath, workflowId, ask);
+                closeManualWorkflowLauncher();
+
+                // Refresh the manual workflows list
+                const instanceNode = document.querySelector('.instance-node[data-path="' + escapeHtml(instancePath) + '"]');
+                if (instanceNode) {
+                    await loadManualWorkflowsForInstance(instancePath, instanceNode);
+                }
+            } catch (error) {
+                alert(`Failed to launch workflow: ${error.message}`);
+                launchBtn.disabled = false;
+                launchBtn.textContent = 'Launch';
+            }
+        });
+
+        askInput.focus();
+
+        launcher.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    function closeManualWorkflowLauncher() {
+        if (currentInlineEditor && currentInlineEditor.classList.contains('manual-workflow-launcher-wrapper')) {
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+        }
+    }
+
+    function openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId) {
+        closePersonaSelector();
+
+        const personasHtml = personas.map(p => `
+            <div class="persona-selector-item" data-persona-id="${escapeHtml(p.id)}">
+                ${getAvatarHtml(p.avatar)}
+                <div class="persona-selector-info">
+                    <div class="persona-selector-name-row">
+                        <span class="persona-selector-name">${escapeHtml(p.name)}</span>
+                        ${p.role ? `<span class="persona-selector-role">${escapeHtml(p.role)}</span>` : ''}
+                    </div>
+                    ${p.about ? `<span class="persona-selector-about">${escapeHtml(p.about)}</span>` : ''}
+                </div>
+            </div>
+        `).join('');
+
+        const selectorHtml = `
+            <div class="persona-selector" data-level="${levelIndex}" data-slot="${slotIndex}">
+                <div class="persona-selector-header">
+                    <div class="persona-selector-title-group">
+                        <h3>Select Persona</h3>
+                        <span class="persona-selector-hint">Hint: you can also drag persona from the left onto workflow's level on the right</span>
+                    </div>
+                    <button class="persona-selector-close-btn">&times;</button>
+                </div>
+                <div class="persona-selector-body">
+                    ${personas.length > 0 ? personasHtml : '<div class="persona-selector-empty">No personas available</div>'}
+                </div>
+            </div>
+        `;
+
+        const selector = document.createElement('div');
+        selector.className = 'inline-editor persona-selector-wrapper';
+        selector.innerHTML = selectorHtml;
+        content.appendChild(selector);
+
+        currentInlineEditor = selector;
+
+        const closeBtn = selector.querySelector('.persona-selector-close-btn');
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePersonaSelector();
+        });
+
+        selector.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        const items = selector.querySelectorAll('.persona-selector-item');
+        items.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const personaId = item.dataset.personaId;
+                addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personaId, personas);
+                closePersonaSelector();
+            });
+        });
+
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closePersonaSelector();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+
+        const handleClickOutside = (e) => {
+            if (!selector.contains(e.target)) {
+                closePersonaSelector();
+                document.removeEventListener('click', handleClickOutside);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
+    }
+
+    function closePersonaSelector() {
+        if (currentInlineEditor && currentInlineEditor.classList.contains('persona-selector-wrapper')) {
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+        }
+    }
+
+    function formatTimestamp(unixMs) {
+        const d = new Date(unixMs);
+        return d.toLocaleTimeString() + ' ' + d.toLocaleDateString();
+    }
+
+    function renderLogContent(text, truncateThreshold = 300) {
+        if (text.length > truncateThreshold) {
+            return `<div class="log-bubble-content truncated">${escapeHtml(text)}</div><span class="log-expand-btn">show more</span>`;
+        }
+        return `<div class="log-bubble-content">${escapeHtml(text)}</div>`;
+    }
+
+    function renderPersonaLogsHtml(logs, personaId) {
+        const filtered = logs.filter(l => {
+            return l.personaId === personaId;
+        });
+
+        if (filtered.length === 0) {
+            return '<div class="logs-empty">No logs for this persona</div>';
+        }
+
+        return filtered.map(log => {
+            const inputBubbles = [];
+            
+            log.msg.parents.forEach(p => {
+                inputBubbles.push(`
+                    <div class="log-bubble context">
+                        <span class="log-bubble-subtitle">Context from ${escapeHtml(p.id)}</span>
+                        ${renderLogContent(p.text)}
+                    </div>
+                `);
+            });
+            
+            if (log.msg.input) {
+                inputBubbles.push(`
+                    <div class="log-bubble input">
+                        <span class="log-bubble-subtitle">INPUT MESSAGE${log.workflowId ? ` (${escapeHtml(log.workflowId)})` : ''}</span>
+                        ${renderLogContent(log.msg.input)}
+                    </div>
+                `);
+            }
+            
+            return `
+            <div class="log-entry">
+                <div class="log-date">${formatTimestamp(log.started_at)}</div>
+                ${inputBubbles.join('')}
+                <div class="log-bubble output ${log.success ? '' : 'error'}">
+                    <span class="log-bubble-subtitle">output</span>
+                    ${renderLogContent(log.msg.output || '(empty)')}
+                </div>
+                <div class="log-duration">took ${log.took}s</div>
+            </div>
+        `;
+        }).join('');
+    }
+
+    function renderWorkflowLogsHtml(logs) {
+        if (logs.length === 0) {
+            return '<div class="logs-empty">No logs for this workflow</div>';
+        }
+
+        return logs.map(log => {
+            const inputBubbles = [];
+            
+            log.msg.parents.forEach(p => {
+                inputBubbles.push(`
+                    <div class="log-bubble context">
+                        <span class="log-bubble-subtitle">Context from ${escapeHtml(p.id)}</span>
+                        ${renderLogContent(p.text)}
+                    </div>
+                `);
+            });
+            
+            if (log.msg.input) {
+                inputBubbles.push(`
+                    <div class="log-bubble input">
+                        <span class="log-bubble-subtitle">INPUT MESSAGE${log.workflowId ? ` (${escapeHtml(log.workflowId)})` : ''}</span>
+                        ${renderLogContent(log.msg.input)}
+                    </div>
+                `);
+            }
+            
+            return `
+            <div class="log-entry">
+                <div class="log-date">${formatTimestamp(log.started_at)}</div>
+                ${inputBubbles.join('')}
+                <div class="log-bubble output ${log.success ? '' : 'error'}">
+                    <span class="log-bubble-subtitle">output</span>
+                    ${renderLogContent(log.msg.output || '(empty)')}
+                </div>
+                <div class="log-duration">took ${log.took}s</div>
+            </div>
+        `;
+        }).join('');
+    }
+
+    async function toggleInstance(event) {
+        const node = event.currentTarget;
+        const path = node.dataset.path;
+        
+        if (!path) return;
+
+        if (!personaCache[path]) {
+            await fetchPersonaCount(path);
+        }
+        if (!workflowCache[path]) {
+            await fetchWorkflowCount(path);
+        }
+        
+        node.classList.toggle('expanded');
+        const expanded = node.classList.contains('expanded');
+        
+        if (expanded) {
+            expandedInstances.add(path);
+        } else {
+            expandedInstances.delete(path);
+        }
+
+        const toggleIcon = node.querySelector('.instance-toggle');
+        if (toggleIcon) {
+            toggleIcon.textContent = expanded ? '▾' : '▸';
+        }
+        node.setAttribute('aria-expanded', expanded);
+
+        const instanceRow = node.querySelector('.instance-row');
+        const bgColor = getInstanceColor(path);
+        if (instanceRow) {
+            instanceRow.style.backgroundColor = bgColor;
+            const state = instanceStateCache[path];
+
+            const footer = instanceRow.querySelector('.instance-footer');
+            if (footer) {
+                const existingPersonaCount = footer.querySelector('.persona-count');
+                if (existingPersonaCount) existingPersonaCount.remove();
+                const existingWorkflowCount = footer.querySelector('.workflow-count');
+                if (existingWorkflowCount) existingWorkflowCount.remove();
+                footer.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state));
+                footer.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state));
+            }
+        }
+
+        const existingExpandedContent = node.querySelector('.expanded-content');
+        if (existingExpandedContent) {
+            existingExpandedContent.remove();
+        }
+
+        if (expanded) {
+            const [personas, workflows] = await Promise.all([
+                fetchPersonas(path),
+                fetchWorkflows(path)
+            ]);
+            instancePersonas[path] = personas;
+            instanceWorkflows[path] = workflows;
+
+            const personasHtml = personas.length > 0
+                ? personas.map(p => {
+                    const stat = getPersonaStats(path, p.id);
+                    return `
+                    <div class="persona-node" 
+                         role="treeitem"
+                         draggable="true"
+                         data-instance-path="${escapeHtml(path)}"
+                         data-persona-id="${escapeHtml(p.id)}"
+                         data-persona-name="${escapeHtml(p.name)}">
+                        <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
+                        ${getAvatarHtml(p.avatar)}
+                        <span class="persona-label">${escapeHtml(p.name)}</span>
+                        <span class="persona-role">${escapeHtml(p.role || '')}</span>
+                        <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
+                            <span class="stat-errors" title="Errors">${stat.errors}</span>
+                            <span class="stat-success" title="Success">${stat.success}</span>
+                            <span class="stat-total">/ ${stat.total}</span>
+                        </div>
+                        <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
+                    </div>
+                `}).join('')
+                : '<div class="subview-empty">No personas</div>';
+
+            const workflowsHtml = workflows.length > 0
+                ? workflows.map(w => `
+                    <div class="workflow-node"
+                         data-instance-path="${escapeHtml(path)}"
+                         data-workflow-id="${escapeHtml(w.id)}">
+                        <span class="workflow-icon">○</span>
+                        <div class="workflow-content">
+                            <div class="workflow-id-row">
+                                <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
+                            </div>
+                            <span class="workflow-label">${escapeHtml(w.name)}</span>
+                            <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
+                            <button class="workflow-launch-btn" data-instance-path="${escapeHtml(path)}" data-workflow-id="${escapeHtml(w.id)}" data-workflow-name="${escapeHtml(w.name)}" data-workflow-ask="${escapeHtml(w.ask || '')}" title="Launch workflow manually">▶ Launch</button>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="subview-empty">No workflows</div>';
+
+            const expandedContentHtml = `
+                <div class="expanded-content">
+                    <div class="subview personas-column">
+                        <div class="subview-header">Personas</div>
+                        <div class="persona-list">${personasHtml}</div>
+                        <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
+                    </div>
+                    <div class="subview workflows-column">
+                        <div class="subview-header">Workflows</div>
+                        <div class="workflow-list">${workflowsHtml}</div>
+                        <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
+                        <div class="manual-workflows-section">
+                            <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
+                            <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
+                                <div class="loading-manual-workflows">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            node.insertAdjacentHTML('beforeend', expandedContentHtml);
+
+            // Load manual workflows after content is inserted
+            loadManualWorkflowsForInstance(path, node);
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function formatEverySecsHint(secs) {
+        if (secs === 0) return 'manual — never repeats';
+        if (secs === 1) return 'continuous loop';
+        if (secs < 60) return `every ${secs} seconds`;
+        if (secs < 3600) {
+            const mins = Math.floor(secs / 60);
+            return mins === 1 ? 'every minute' : `every ${mins} minutes`;
+        }
+        const hours = Math.floor(secs / 3600);
+        return hours === 1 ? 'every hour' : `every ${hours} hours`;
+    }
+
+    function getAvatarHtml(avatar) {
+        if (!avatar) {
+            return '<span class="persona-icon">○</span>';
+        }
+        return `<img class="persona-avatar" src="${escapeHtml(avatar)}" alt="" onerror="this.outerHTML='<span class=\\'persona-icon\\'>○</span>'">`;
+    }
+
+    function getPersonaStats(path, personaId) {
+        const key = `${path}:${personaId}`;
+        return instancePersonaStats[key] || { errors: 0, success: 0, total: 0 };
+    }
+
+    function getPersonaCountHtml(path, state, totalFromFetch) {
+        const total = totalFromFetch !== undefined ? totalFromFetch : (personaCache[path] !== undefined ? personaCache[path] : 0);
+        return `<span class="persona-count">Personas: ${total}</span>`;
+    }
+
+    function getWorkflowCountHtml(path, state, totalFromFetch) {
+        const stateAvailable = state && state.lastLoopAtUnixMs !== null;
+        let activeCount = 0;
+        let total = 0;
+
+        if (stateAvailable) {
+            activeCount = state.activeRunningWorkflows || 0;
+            total = (state.activeRunningWorkflows || 0) + (state.inactiveWorkflows || 0);
+        } else {
+            if (totalFromFetch !== undefined) {
+                total = totalFromFetch;
+            } else {
+                total = workflowCache[path] !== undefined ? workflowCache[path] : 0;
+            }
+        }
+
+        return `<span class="workflow-count">Workflows: ${activeCount}/${total}</span>`;
+    }
+
+    async function fetchPersonaLogs(path, personaId = null, offset = 0, count = 5) {
+        try {
+            let url = `/api/instances/${encodeURIComponent(path)}/logs/personas`;
+            const params = [];
+            if (personaId) {
+                params.push(`personaId=${encodeURIComponent(personaId)}`);
+            }
+            params.push(`offset=${offset}`);
+            params.push(`count=${count}`);
+            if (params.length > 0) {
+                url += `?${params.join('&')}`;
+            }
+            const response = await fetch(url);
+            const data = await response.json();
+            const stats = data.stats || {};
+            Object.keys(stats).forEach(key => {
+                instancePersonaStats[`${path}:${key}`] = stats[key];
+            });
+            return data;
+        } catch (error) {
+            console.error('Failed to fetch persona logs:', error);
+            return { logs: [], stats: {}, offset: 0, count: 5, total: 0 };
+        }
+    }
+
+    async function fetchWorkflowLogs(path, workflowId, offset = 0, count = 5) {
+        try {
+            let url = `/api/instances/${encodeURIComponent(path)}/logs/workflows/${encodeURIComponent(workflowId)}`;
+            const params = [];
+            params.push(`offset=${offset}`);
+            params.push(`count=${count}`);
+            if (params.length > 0) {
+                url += `?${params.join('&')}`;
+            }
+            const response = await fetch(url);
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Failed to fetch workflow logs:', error);
+            return { logs: [], offset: 0, count: 5, total: 0 };
+        }
+    }
+
+    async function refreshInstanceContent(path) {
+        const node = document.querySelector(`.instance-node[data-path="${escapeHtml(path)}"]`);
+        if (!node || !node.classList.contains('expanded')) return;
+
+        const [personas, workflows] = await Promise.all([
+            fetchPersonas(path),
+            fetchWorkflows(path)
+        ]);
+        instancePersonas[path] = personas;
+        instanceWorkflows[path] = workflows;
+        personaCache[path] = personas.length;
+        workflowCache[path] = workflows.length;
+
+        const existingContent = node.querySelector('.expanded-content');
+        if (existingContent) {
+            existingContent.remove();
+        }
+
+        const personasHtml = personas.length > 0
+            ? personas.map(p => {
+                const stat = getPersonaStats(path, p.id);
+                return `
+                <div class="persona-node" 
+                     role="treeitem"
+                     draggable="true"
+                     data-instance-path="${escapeHtml(path)}"
+                     data-persona-id="${escapeHtml(p.id)}"
+                     data-persona-name="${escapeHtml(p.name)}">
+                    <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
+                    ${getAvatarHtml(p.avatar)}
+                    <span class="persona-label">${escapeHtml(p.name)}</span>
+                    <span class="persona-role">${escapeHtml(p.role || '')}</span>
+                    <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
+                        <span class="stat-errors" title="Errors">${stat.errors}</span>
+                        <span class="stat-success" title="Success">${stat.success}</span>
+                        <span class="stat-total">/ ${stat.total}</span>
+                    </div>
+                    <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
+                </div>
+            `}).join('')
+            : '<div class="subview-empty">No personas</div>';
+
+        const workflowsHtml = workflows.length > 0
+            ? workflows.map(w => `
+                <div class="workflow-node"
+                     data-instance-path="${escapeHtml(path)}"
+                     data-workflow-id="${escapeHtml(w.id)}">
+                    <span class="workflow-icon">○</span>
+                    <div class="workflow-content">
+                        <div class="workflow-id-row">
+                            <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
+                        </div>
+                        <span class="workflow-label">${escapeHtml(w.name)}</span>
+                        <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
+                    </div>
+                </div>
+            `).join('')
+            : '<div class="subview-empty">No workflows</div>';
+
+        const expandedContentHtml = `
+            <div class="expanded-content">
+                <div class="subview personas-column">
+                    <div class="subview-header">Personas</div>
+                    <div class="persona-list">${personasHtml}</div>
+                    <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
+                </div>
+                <div class="subview workflows-column">
+                    <div class="subview-header">Workflows</div>
+                    <div class="workflow-list">${workflowsHtml}</div>
+                    <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
+                    <div class="manual-workflows-section">
+                        <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
+                        <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
+                            <div class="loading-manual-workflows">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        node.insertAdjacentHTML('beforeend', expandedContentHtml);
+
+        loadManualWorkflowsForInstance(path, node);
+
+        const instanceRow = node.querySelector('.instance-row');
+        if (instanceRow) {
+            const footer = instanceRow.querySelector('.instance-footer');
+            if (footer) {
+                const existingPersonaCount = footer.querySelector('.persona-count');
+                if (existingPersonaCount) existingPersonaCount.remove();
+                const existingWorkflowCount = footer.querySelector('.workflow-count');
+                if (existingWorkflowCount) existingWorkflowCount.remove();
+
+                const state = instanceStateCache[path];
+                footer.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state, personas.length));
+                footer.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state, workflows.length));
+            }
+        }
+    }
+
+    function startAutoRefresh() {
+        autoRefreshInterval = setInterval(() => fetchInstances(true), 30000);
+        startCountdown();
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+        stopCountdown();
+    }
+
+    function updateCountdown() {
+        const el = document.getElementById('refreshCountdown');
+        if (!el) return;
+        if (currentInlineEditor) {
+            el.textContent = '--';
+            el.classList.add('paused');
+            el.classList.remove('warning');
+            return;
+        }
+        el.classList.remove('paused');
+        el.textContent = countdownValue + 's';
+        el.classList.toggle('warning', countdownValue <= 10);
+        countdownValue--;
+        if (countdownValue < 0) countdownValue = 30;
+    }
+
+    function startCountdown() {
+        countdownValue = 30;
+        updateCountdown();
+        countdownInterval = setInterval(updateCountdown, 1000);
+    }
+
+    function stopCountdown() {
+        if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+    }
+
+    function resetCountdown() {
+        countdownValue = 30;
+        updateCountdown();
+    }
+
+    refreshBtn.addEventListener('click', () => {
+        personaCache = {};
+        workflowCache = {};
+        instanceStateCache = {};
+        expandedInstances.clear();
+        instancePersonas = {};
+        instanceWorkflows = {};
+        closeInlinePersonaEditor();
+        resetCountdown();
+        fetchInstances();
+    });
+    
+    content.addEventListener('click', (e) => {
+        if (currentInlineEditor && currentInlineEditor.contains(e.target)) {
+            return;
+        }
+
+        if (e.target.classList.contains('info-icon')) {
+            e.stopPropagation();
+            openHelpPanel(e.target.dataset.doc);
+            return;
+        }
+
+        const refreshBtn = e.target.closest('.logs-refresh-btn');
+        if (refreshBtn) {
+            e.stopPropagation();
+            return;
+        }
+
+        const manualRefreshBtn = e.target.closest('.manual-workflows-refresh');
+        if (manualRefreshBtn) {
+            e.stopPropagation();
+            const instancePath = manualRefreshBtn.dataset.instancePath;
+            const node = document.querySelector(`.instance-node[data-path="${escapeHtml(instancePath)}"]`);
+            if (node) {
+                const container = node.querySelector('.manual-workflows-list');
+                if (container) {
+                    container.innerHTML = '<div class="loading-manual-workflows">Loading...</div>';
+                }
+                loadManualWorkflowsForInstance(instancePath, node);
+            }
+            return;
+        }
+
+        const deleteBtn = e.target.closest('.manual-workflow-delete');
+        if (deleteBtn) {
+            e.stopPropagation();
+            const runId = deleteBtn.dataset.runId;
+            const instancePath = deleteBtn.dataset.instancePath;
+            if (runId && instancePath) {
+                deleteManualWorkflow(instancePath, runId, deleteBtn);
+            }
+            return;
+        }
+
+        if (e.target.classList.contains('log-expand-btn')) {
+            e.stopPropagation();
+            const content = e.target.previousElementSibling;
+            if (content && content.classList.contains('log-bubble-content')) {
+                content.classList.remove('truncated');
+                content.classList.add('expanded');
+                e.target.remove();
+            }
+            return;
+        }
+
+        const addBtn = e.target.closest('.add-item-btn');
+        if (addBtn) {
+            e.stopPropagation();
+            const action = addBtn.dataset.action;
+            const instancePath = addBtn.dataset.instancePath;
+            if (action === 'create-persona') {
+                openInlinePersonaCreator(instancePath, addBtn);
+            } else if (action === 'create-workflow') {
+                openInlineWorkflowCreator(instancePath, addBtn);
+            }
+            return;
+        }
+
+        const launchBtn = e.target.closest('.workflow-launch-btn');
+        if (launchBtn) {
+            e.stopPropagation();
+            const instancePath = launchBtn.dataset.instancePath;
+            const workflowId = launchBtn.dataset.workflowId;
+            const workflowName = launchBtn.dataset.workflowName;
+            const workflowAsk = launchBtn.dataset.workflowAsk || '';
+            openManualWorkflowLauncher(instancePath, workflowId, workflowName, workflowAsk, launchBtn);
+            return;
+        }
+
+        const personaNode = e.target.closest('.persona-node');
+        if (personaNode) {
+            if (currentInlineEditor && currentInlineEditor.previousElementSibling === personaNode) {
+                closeInlinePersonaEditor();
+                return;
+            }
+            openInlinePersonaEditor(personaNode, personaNode.dataset.instancePath, personaNode.dataset.personaId);
+            return;
+        }
+
+        const workflowNode = e.target.closest('.workflow-node');
+        if (workflowNode) {
+            if (currentInlineEditor && currentInlineEditor.previousElementSibling === workflowNode) {
+                closeInlineWorkflowEditor();
+                return;
+            }
+            openInlineWorkflowEditor(workflowNode, workflowNode.dataset.instancePath, workflowNode.dataset.workflowId);
+            return;
+        }
+
+        const instanceRow = e.target.closest('.instance-row');
+        if (instanceRow) {
+            const instanceNode = instanceRow.closest('.instance-node');
+            closeInlinePersonaEditor();
+            closeInlineWorkflowEditor();
+            toggleInstance({ currentTarget: instanceNode });
+        }
+    });
+
+    content.addEventListener('dragstart', (e) => {
+        const personaNode = e.target.closest('.persona-node');
+        if (personaNode) {
+            e.dataTransfer.setData('text/plain', personaNode.dataset.personaId);
+            e.dataTransfer.effectAllowed = 'copy';
+            personaNode.classList.add('dragging');
+            globalDragState.active = true;
+            globalDragState.personaId = personaNode.dataset.personaId;
+            
+            if (currentInlineEditor) {
+                currentInlineEditor.classList.add('dragging-active');
+            }
+        }
+    });
+
+    content.addEventListener('dragend', (e) => {
+        const personaNode = e.target.closest('.persona-node');
+        if (personaNode) {
+            personaNode.classList.remove('dragging');
+            globalDragState.active = false;
+            globalDragState.personaId = null;
+            
+            if (currentInlineEditor) {
+                currentInlineEditor.classList.remove('dragging-active');
+            }
+        }
+    });
+
+    function setLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem('openloop-lang', lang);
+        
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            const isActive = btn.dataset.lang === lang;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive);
+        });
+        
+        if (currentHelpDoc) {
+            openHelpPanel(currentHelpDoc);
+        }
+    }
+    
+    function initLanguageButtons() {
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setLanguage(btn.dataset.lang);
+            });
+            
+            const isActive = btn.dataset.lang === currentLang;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive);
+        });
+    }
+    
+    initLanguageButtons();
+
+    console.log('DEBUG: About to call fetchInstances()');
+    fetchInstances();
+    console.log('DEBUG: About to call startAutoRefresh()');
+    startAutoRefresh();
+
+    async function fetchMarkdown(filename) {
+        const langResponse = await fetch(`/docs/${filename}.${currentLang}.md`);
+        if (langResponse.ok) {
+            return await langResponse.text();
+        }
+        
+        if (currentLang !== 'en') {
+            const enResponse = await fetch(`/docs/${filename}.en.md`);
+            if (enResponse.ok) {
+                return await enResponse.text();
+            }
+        }
+        
+        throw new Error('Content not found');
+    }
+
+    async function openHelpPanel(fileName) {
+        currentHelpDoc = fileName;
+        try {
+            const mdContent = await fetchMarkdown(fileName);
+            document.getElementById('help-panel-content').innerHTML = marked.parse(mdContent);
+            document.getElementById('help-panel-content').scrollTop = 0;
+            document.getElementById('help-panel-content').onclick = (e) => {
+                const link = e.target.closest('a');
+                if (!link) return;
+                
+                const href = link.getAttribute('href');
+                if (!href) return;
+                
+                const docName = href.replace(/\.md$/, '');
+                const knownDocs = ['persona', 'workflow', 'instance'];
+                
+                if (knownDocs.includes(docName)) {
+                    e.preventDefault();
+                    openHelpPanel(docName);
+                }
+            };
+            document.getElementById('help-panel').classList.add('open');
+            document.getElementById('help-backdrop').classList.add('open');
+        } catch (err) {
+            document.getElementById('help-panel-content').innerHTML = '<p>Help content not found</p>';
+            document.getElementById('help-panel').classList.add('open');
+            document.getElementById('help-backdrop').classList.add('open');
+        }
+    }
+
+    function closeHelpPanel() {
+        currentHelpDoc = null;
+        document.getElementById('help-panel').classList.remove('open');
+        document.getElementById('help-backdrop').classList.remove('open');
+    }
+
+    document.getElementById('help-panel-close').addEventListener('click', closeHelpPanel);
+    document.getElementById('help-backdrop').addEventListener('click', closeHelpPanel);
+    
+    document.getElementById('help-panel-open-tab').addEventListener('click', () => {
+        const docParam = currentHelpDoc ? `?doc=${encodeURIComponent(currentHelpDoc)}` : '';
+        window.open(`/docs.html${docParam}`, '_blank');
+    });
+
+    function closeInlinePersonaEditor() {
+        if (currentInlineEditor) {
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+        }
+        const logsPanel = document.querySelector('.logs-panel');
+        if (logsPanel) {
+            logsPanel.remove();
+        }
+        document.querySelectorAll('.workflow-logs-panel').forEach(panel => {
+            panel.remove();
+        });
+        const workflowsColumn = document.querySelector('.workflows-column');
+        const personasColumn = document.querySelector('.personas-column');
+        if (workflowsColumn) {
+            workflowsColumn.style.display = '';
+        }
+        if (personasColumn) {
+            personasColumn.classList.remove('logs-active');
+        }
+        clearEditingState();
+    }
+
+    function closeInlineWorkflowEditor() {
+        if (currentInlineEditor) {
+            const logsPanel = currentInlineEditor.nextElementSibling;
+            if (logsPanel && logsPanel.classList.contains('workflow-logs-panel')) {
+                logsPanel.remove();
+            }
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+        }
+        clearEditingState();
+    }
+
+    async function openInlinePersonaEditor(personaNode, instancePath, personaId) {
+        closeInlinePersonaEditor();
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas/${encodeURIComponent(personaId)}`);
+            if (!response.ok) throw new Error('Failed to load persona');
+            const persona = await response.json();
+
+            let logsOffset = 0;
+            const logsCount = 5;
+            let logsTotal = 0;
+            let currentLogs = [];
+
+            const refreshLogs = async (offset) => {
+                const logsData = await fetchPersonaLogs(instancePath, personaId, offset, logsCount);
+                logsOffset = logsData.offset || 0;
+                logsTotal = logsData.total || 0;
+                currentLogs = logsData.logs || [];
+                updateLogsPanel();
+            };
+
+            const updateLogsPanel = () => {
+                const logsPanel = document.querySelector('.logs-panel-content');
+                if (logsPanel) {
+                    const logsHtml = renderPersonaLogsHtml(currentLogs, personaId);
+                    logsPanel.innerHTML = logsHtml;
+                    logsPanel.scrollTop = 0;
+
+                    const paginationPanels = document.querySelectorAll('.logs-pagination');
+                    const start = logsOffset + 1;
+                    const end = Math.min(logsOffset + logsCount, logsTotal);
+                    const paginationText = logsTotal > 0 ? `${start} - ${end} (of ${logsTotal})` : 'No logs';
+
+                    paginationPanels.forEach(panel => {
+                        const textEl = panel.querySelector('.logs-pagination-text');
+                        if (textEl) {
+                            textEl.textContent = paginationText;
+                        }
+
+                        const prevBtn = panel.querySelector('.logs-prev-btn');
+                        const nextBtn = panel.querySelector('.logs-next-btn');
+
+                        if (prevBtn) {
+                            prevBtn.disabled = logsOffset <= 0;
+                        }
+                        if (nextBtn) {
+                            nextBtn.disabled = logsOffset + logsCount >= logsTotal;
+                        }
+                    });
+
+                    const paginationTop = document.querySelector('.logs-pagination-top');
+                    if (paginationTop) {
+                        const rect = paginationTop.getBoundingClientRect();
+                        if (rect.top < 0) {
+                            paginationTop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                }
+            };
+
+            const avatarPreviewHtml = persona.avatar
+                ? `<img class="avatar-preview-img" src="${escapeHtml(persona.avatar)}" alt="" onerror="this.outerHTML='<span class=\\'avatar-preview-placeholder\\'>○</span>'">`
+                : '<span class="avatar-preview-placeholder">○</span>';
+
+            const editorHtml = `
+                <div class="persona-editor-inline">
+                    <button class="persona-editor-close" title="Close">&times;</button>
+                    <div class="persona-field">
+                        <label>Name</label>
+                        <input type="text" class="persona-input" data-field="name" value="${escapeHtml(persona.name || '')}">
+                    </div>
+                    <div class="persona-field avatar-field">
+                        <label>Avatar</label>
+                        <div class="avatar-input-row">
+                            <div class="avatar-preview">${avatarPreviewHtml}</div>
+                            <div class="avatar-inputs">
+                                <input type="text" class="persona-input avatar-url-input" data-field="avatar" placeholder="https://example.com/avatar.png" value="${escapeHtml(persona.avatar || '')}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="persona-field">
+                        <label>Role</label>
+                        <input type="text" class="persona-input" data-field="role" value="${escapeHtml(persona.role || '')}" placeholder="2-3 words position title, like: UIX Designer, Frontend engineer">
+                    </div>
+                    <div class="persona-field">
+                        <label>Agent</label>
+                        <input type="text" class="persona-input" data-field="agent" placeholder="cc_docker" value="${escapeHtml(persona.agent || '')}">
+                    </div>
+                    <div class="persona-field">
+                        <label>About</label>
+                        <textarea class="persona-input persona-textarea" data-field="about" rows="4" placeholder="This is system_prompt (will be used as system prompt for LLMs)">${escapeHtml(persona.about || '')}</textarea>
+                    </div>
+                    <div class="persona-field">
+                        <label>Task</label>
+                        <textarea class="persona-input persona-textarea" data-field="task" rows="5">${escapeHtml(persona.task || '')}</textarea>
+                    </div>
+                    <button class="delete-btn" data-action="delete-persona">Delete</button>
+                </div>
+            `;
+            personaNode.insertAdjacentHTML('afterend', editorHtml);
+            currentInlineEditor = personaNode.nextElementSibling;
+            currentInlineEditor.dataset.instancePath = instancePath;
+
+            const personaList = personaNode.closest('.persona-list');
+            setEditingState(personaList, personaNode);
+            currentInlineEditor.dataset.personaId = personaId;
+
+            const expandedContent = personaNode.closest('.expanded-content');
+            if (expandedContent) {
+                const workflowsColumn = expandedContent.querySelector('.workflows-column');
+                const personasColumn = expandedContent.querySelector('.personas-column');
+                if (workflowsColumn) {
+                    workflowsColumn.style.display = 'none';
+                }
+                if (personasColumn) {
+                    personasColumn.classList.add('logs-active');
+                }
+
+                const logsPanelHtml = `
+                    <div class="logs-panel">
+                        <div class="logs-panel-header">
+                            <button class="logs-back-btn" title="Back to personas">&larr;</button>
+                            <span class="logs-panel-title">Logs: ${escapeHtml(persona.name)}</span>
+                        </div>
+                        <div class="logs-pagination logs-pagination-top">
+                            <button class="logs-prev-btn" title="Previous logs">&larr;</button>
+                            <span class="logs-pagination-text"></span>
+                            <button class="logs-next-btn" title="Next logs">&rarr;</button>
+                            <button class="logs-refresh-btn" title="Refresh logs">↻</button>
+                        </div>
+                        <div class="logs-panel-content"></div>
+                        <div class="logs-pagination logs-pagination-bottom">
+                            <button class="logs-prev-btn" title="Previous logs">&larr;</button>
+                            <span class="logs-pagination-text"></span>
+                            <button class="logs-next-btn" title="Next logs">&rarr;</button>
+                            <button class="logs-refresh-btn" title="Refresh logs">↻</button>
+                        </div>
+                    </div>
+                `;
+                
+                const existingLogsPanel = expandedContent.querySelector('.logs-panel');
+                if (existingLogsPanel) existingLogsPanel.remove();
+                
+                expandedContent.insertAdjacentHTML('beforeend', logsPanelHtml);
+
+                const paginationPanels = expandedContent.querySelectorAll('.logs-pagination');
+                paginationPanels.forEach(paginationPanel => {
+                    const prevBtn = paginationPanel.querySelector('.logs-prev-btn');
+                    const nextBtn = paginationPanel.querySelector('.logs-next-btn');
+                    const refreshBtn = paginationPanel.querySelector('.logs-refresh-btn');
+
+                    prevBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (logsOffset > 0) {
+                            refreshLogs(Math.max(0, logsOffset - logsCount));
+                        }
+                    });
+
+                    nextBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (logsOffset + logsCount < logsTotal) {
+                            refreshLogs(logsOffset + logsCount);
+                        }
+                    });
+
+                    if (refreshBtn) {
+                        refreshBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            refreshBtn.classList.add('loading');
+                            const originalText = refreshBtn.textContent;
+                            try {
+                                await refreshLogs(logsOffset);
+                                refreshBtn.classList.remove('loading');
+                                refreshBtn.classList.add('success');
+                                refreshBtn.textContent = '✓';
+                                setTimeout(() => {
+                                    refreshBtn.classList.remove('success');
+                                    refreshBtn.textContent = originalText;
+                                }, 1500);
+                            } catch (err) {
+                                refreshBtn.classList.remove('loading');
+                                refreshBtn.classList.add('error');
+                                refreshBtn.textContent = '✗';
+                                setTimeout(() => {
+                                    refreshBtn.classList.remove('error');
+                                    refreshBtn.textContent = originalText;
+                                }, 1500);
+                            }
+                        });
+                    }
+                });
+
+                await refreshLogs(0);
+                instancePersonaLogs[instancePath] = currentLogs;
+            }
+
+            currentInlineEditor.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+
+            currentInlineEditor.addEventListener('focusin', (e) => {
+                e.stopPropagation();
+            });
+
+            currentInlineEditor.querySelectorAll('.persona-input').forEach(input => {
+                input.addEventListener('blur', (e) => {
+                    if (e.target.value !== e.target.defaultValue) {
+                        saveInlinePersonaField(currentInlineEditor, e.target.dataset.field, e.target.value);
+                        e.target.defaultValue = e.target.value;
+                    }
+                });
+            });
+
+            const avatarUrlInput = currentInlineEditor.querySelector('.avatar-url-input');
+            if (avatarUrlInput) {
+                let avatarDebounce;
+                avatarUrlInput.addEventListener('input', (e) => {
+                    clearTimeout(avatarDebounce);
+                    avatarDebounce = setTimeout(() => {
+                        const url = e.target.value.trim();
+                        updateAvatarPreview(currentInlineEditor, url);
+                        saveInlinePersonaField(currentInlineEditor, 'avatar', url);
+                        e.target.defaultValue = url;
+                    }, 500);
+                });
+            }
+
+            const deleteBtn = currentInlineEditor.querySelector('[data-action="delete-persona"]');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const personaName = currentInlineEditor.querySelector('[data-field="name"]')?.value || personaId;
+                    if (confirm(`Delete persona "${personaName}"?`)) {
+                        deletePersona(instancePath, personaId, currentInlineEditor);
+                    }
+                });
+            }
+
+            const closeBtn = currentInlineEditor.querySelector('.persona-editor-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    closeInlinePersonaEditor();
+                });
+            }
+
+            const backBtn = document.querySelector('.logs-back-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    closeInlinePersonaEditor();
+                });
+            }
+
+        } catch (err) {
+            console.error('Failed to load persona:', err);
+        }
+    }
+
+    function updateAvatarPreview(editor, avatar) {
+        const preview = editor.querySelector('.avatar-preview');
+        if (!preview) return;
+
+        if (avatar) {
+            preview.innerHTML = `<img class="avatar-preview-img" src="${escapeHtml(avatar)}" alt="" onerror="this.outerHTML='<span class=\\'avatar-preview-placeholder\\'>○</span>'">`;
+        } else {
+            preview.innerHTML = '<span class="avatar-preview-placeholder">○</span>';
+        }
+    }
+
+   
+
+    async function saveInlinePersonaField(editor, field, value) {
+        const instancePath = editor.dataset.instancePath;
+        const personaId = editor.dataset.personaId;
+        
+        const fieldContainer = editor.querySelector(`[data-field="${field}"]`).parentElement;
+        const existingIndicator = fieldContainer.querySelector('.save-indicator');
+        if (existingIndicator) existingIndicator.remove();
+        
+        const savingIndicator = document.createElement('span');
+        savingIndicator.className = 'save-indicator saving';
+        savingIndicator.textContent = '⏳';
+        fieldContainer.appendChild(savingIndicator);
+
+        try {
+            const updateData = {};
+            updateData[field] = value;
+            
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas/${encodeURIComponent(personaId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateData)
+            });
+            
+            if (!response.ok) throw new Error('Failed to save');
+            
+            savingIndicator.className = 'save-indicator saved';
+            savingIndicator.textContent = '✓';
+            
+            setTimeout(() => {
+                savingIndicator.classList.add('fade-out');
+                setTimeout(() => savingIndicator.remove(), 300);
+            }, 1500);
+        } catch (err) {
+            console.error('Failed to save:', err);
+            savingIndicator.className = 'save-indicator error';
+            savingIndicator.textContent = '⚠';
+            
+            setTimeout(() => savingIndicator.remove(), 3000);
+        }
+    }
+
+    async function openInlineWorkflowEditor(workflowNode, instancePath, workflowId) {
+        closeInlinePersonaEditor();
+        
+        document.querySelectorAll('.workflow-logs-panel').forEach(panel => {
+            panel.remove();
+        });
+        
+        if (currentInlineEditor) {
+            closeInlineWorkflowEditor();
+        }
+
+        try {
+            const [workflowResponse, personasResponse] = await Promise.all([
+                fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`),
+                fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas`)
+            ]);
+
+            if (!workflowResponse.ok) throw new Error('Failed to load workflow');
+
+            const workflow = await workflowResponse.json();
+            const personasData = await personasResponse.json();
+            const personas = personasData.personas || [];
+            const levels = workflow.levels || [];
+
+            const levelsHtml = renderLevels(levels, personas);
+
+            const scheduleHint = formatEverySecsHint(workflow.every_secs || 0);
+
+            let workflowLogsOffset = 0;
+            const workflowLogsCount = 5;
+            let workflowLogsTotal = 0;
+            let currentWorkflowLogs = [];
+
+            const refreshWorkflowLogs = async (offset) => {
+                const logsData = await fetchWorkflowLogs(instancePath, workflowId, offset, workflowLogsCount);
+                workflowLogsOffset = logsData.offset || 0;
+                workflowLogsTotal = logsData.total || 0;
+                currentWorkflowLogs = logsData.logs || [];
+                updateWorkflowLogsPanel();
+            };
+
+            const updateWorkflowLogsPanel = () => {
+                const logsPanel = document.querySelector('.workflow-logs-panel-content');
+                if (logsPanel) {
+                    const logsHtml = renderWorkflowLogsHtml(currentWorkflowLogs);
+                    logsPanel.innerHTML = logsHtml;
+                    logsPanel.scrollTop = 0;
+
+                    const paginationPanels = document.querySelectorAll('.workflow-logs-pagination');
+                    const start = workflowLogsOffset +1;
+                    const end = Math.min(workflowLogsOffset + workflowLogsCount, workflowLogsTotal);
+                    const paginationText = workflowLogsTotal > 0 ? `${start} - ${end} (of ${workflowLogsTotal})` : 'No logs';
+
+                    paginationPanels.forEach(panel => {
+                        const textEl = panel.querySelector('.workflow-logs-pagination-text');
+                        if (textEl) {
+                            textEl.textContent = paginationText;
+                        }
+
+                        const prevBtn = panel.querySelector('.workflow-logs-prev-btn');
+                        const nextBtn = panel.querySelector('.workflow-logs-next-btn');
+
+                        if (prevBtn) {
+                            prevBtn.disabled = workflowLogsOffset <= 0;
+                        }
+                        if (nextBtn) {
+                            nextBtn.disabled = workflowLogsOffset + workflowLogsCount >= workflowLogsTotal;
+                        }
+                    });
+
+                    const paginationTop = document.querySelector('.workflow-logs-pagination-top');
+                    if (paginationTop) {
+                        const rect = paginationTop.getBoundingClientRect();
+                        if (rect.top < 0) {
+                            paginationTop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                }
+            };
+
+            const editorHtml = `
+                <div class="workflow-editor-inline">
+                    <div class="wf-header">
+                        <div class="wf-title-row">
+                            <input type="text" class="wf-name-input" data-field="name" value="${escapeHtml(workflow.name || workflowId)}" placeholder="Workflow name">
+                            <div class="wf-header-actions">
+                                <span class="wf-save-indicator"></span>
+                                <button class="delete-btn" data-action="delete-workflow">Delete</button>
+                            </div>
+                        </div>
+                        <input type="text" class="wf-desc-input" data-field="desc" value="${escapeHtml(workflow.desc || '')}" placeholder="Description (optional)">
+                        <span class="wf-subtitle">Workflow Levels <span class="wf-hint">(drag personas from the left or click +)</span></span>
+                    </div>
+                    <div class="wf-body">
+                        <div class="wf-schedule-field">
+                            <label>Repeat every</label>
+                            <input type="text" class="wf-schedule-input" data-field="every_secs" pattern="[0-9]*" inputmode="numeric" maxlength="7" value="${workflow.every_secs || 0}">
+                            <span class="wf-schedule-unit">seconds</span>
+                            <span class="info-icon" data-doc="workflow-schedule" title="Learn about scheduling">ⓘ</span>
+                            <span class="wf-schedule-hint">(${scheduleHint})</span>
+                        </div>
+                        <div class="wf-schedule-presets">
+                            <button type="button" class="preset-btn" data-secs="0">manual</button>
+                            <button type="button" class="preset-btn" data-secs="600">10m</button>
+                            <button type="button" class="preset-btn" data-secs="3600">1h</button>
+                            <button type="button" class="preset-btn" data-secs="86400">24h</button>
+                        </div>
+                        <div class="wf-canvas">
+                            <div class="wf-levels-container" data-instance-path="${escapeHtml(instancePath)}" data-workflow-id="${escapeHtml(workflowId)}">${levelsHtml}</div>
+                            <button class="wf-add-level-btn">+ Add Level</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="workflow-logs-panel">
+                    <div class="logs-panel-header">
+                        <span class="logs-panel-title">Workflow Logs</span>
+                    </div>
+                    <div class="workflow-logs-pagination workflow-logs-pagination-top">
+                        <button class="workflow-logs-prev-btn" title="Previous logs">&larr;</button>
+                        <span class="workflow-logs-pagination-text"></span>
+                        <button class="workflow-logs-next-btn" title="Next logs">&rarr;</button>
+                        <button class="logs-refresh-btn" title="Refresh logs">↻</button>
+                    </div>
+                    <div class="workflow-logs-panel-content"></div>
+                    <div class="workflow-logs-pagination workflow-logs-pagination-bottom">
+                        <button class="workflow-logs-prev-btn" title="Previous logs">&larr;</button>
+                        <span class="workflow-logs-pagination-text"></span>
+                        <button class="workflow-logs-next-btn" title="Next logs">&rarr;</button>
+                        <button class="logs-refresh-btn" title="Refresh logs">↻</button>
+                    </div>
+                </div>
+            `;
+            workflowNode.insertAdjacentHTML('afterend', editorHtml);
+            currentInlineEditor = workflowNode.nextElementSibling;
+            currentInlineEditor.dataset.instancePath = instancePath;
+            currentInlineEditor.dataset.workflowId = workflowId;
+
+            currentInlineEditor.addEventListener('click', (e) => e.stopPropagation());
+            currentInlineEditor.addEventListener('focusin', (e) => e.stopPropagation());
+
+            currentInlineEditor.querySelectorAll('.info-icon').forEach(icon => {
+                icon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openHelpPanel(icon.dataset.doc);
+                });
+            });
+
+            const nameInput = currentInlineEditor.querySelector('[data-field="name"]');
+            if (nameInput) {
+                nameInput.addEventListener('blur', (e) => {
+                    const value = e.target.value.trim();
+                    if (value !== e.target.defaultValue) {
+                        saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'name', value);
+                        e.target.defaultValue = value;
+                    }
+                });
+            }
+
+            const descInput = currentInlineEditor.querySelector('[data-field="desc"]');
+            if (descInput) {
+                descInput.addEventListener('blur', (e) => {
+                    const value = e.target.value.trim();
+                    if (value !== e.target.defaultValue) {
+                        saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'desc', value);
+                        e.target.defaultValue = value;
+                    }
+                });
+            }
+
+            const everySecsInput = currentInlineEditor.querySelector('[data-field="every_secs"]');
+            if (everySecsInput) {
+                everySecsInput.addEventListener('input', (e) => {
+                    const hint = currentInlineEditor.querySelector('.wf-schedule-hint');
+                    if (hint) {
+                        hint.textContent = `(${formatEverySecsHint(parseInt(e.target.value) || 0)})`;
+                    }
+                });
+                everySecsInput.addEventListener('blur', (e) => {
+                    const value = parseInt(e.target.value) || 0;
+                    if (value !== parseInt(e.target.defaultValue)) {
+                        saveWorkflowEverySecs(currentInlineEditor, instancePath, workflowId, value);
+                        e.target.defaultValue = value;
+                    }
+                });
+            }
+
+            currentInlineEditor.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const secs = btn.dataset.secs;
+                    const input = currentInlineEditor.querySelector('[data-field="every_secs"]');
+                    if (input) {
+                        input.value = secs;
+                        input.dispatchEvent(new Event('input'));
+                        const value = parseInt(secs) || 0;
+                        if (value !== parseInt(input.defaultValue)) {
+                            saveWorkflowEverySecs(currentInlineEditor, instancePath, workflowId, value);
+                            input.defaultValue = value;
+                        }
+                    }
+                });
+            });
+
+            setupWorkflowDragDrop(currentInlineEditor, instancePath, workflowId, personas);
+
+            const workflowDeleteBtn = currentInlineEditor.querySelector('[data-action="delete-workflow"]');
+            if (workflowDeleteBtn) {
+                workflowDeleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete workflow "${workflowId}"?`)) {
+                        deleteWorkflow(instancePath, workflowId, currentInlineEditor);
+                    }
+                });
+            }
+
+            currentInlineEditor.querySelector('.wf-add-level-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                addLevel(currentInlineEditor, instancePath, workflowId, personas);
+            });
+
+            const paginationPanels = currentInlineEditor.parentElement.querySelectorAll('.workflow-logs-pagination');
+            paginationPanels.forEach(paginationPanel => {
+                const prevBtn = paginationPanel.querySelector('.workflow-logs-prev-btn');
+                const nextBtn = paginationPanel.querySelector('.workflow-logs-next-btn');
+
+                prevBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (workflowLogsOffset > 0) {
+                        refreshWorkflowLogs(Math.max(0, workflowLogsOffset - workflowLogsCount));
+                    }
+                });
+
+                nextBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (workflowLogsOffset + workflowLogsCount < workflowLogsTotal) {
+                        refreshWorkflowLogs(workflowLogsOffset + workflowLogsCount);
+                    }
+                });
+
+                const refreshBtn = paginationPanel.querySelector('.logs-refresh-btn');
+                if (refreshBtn) {
+                    refreshBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        refreshBtn.classList.add('loading');
+                        const originalText = refreshBtn.textContent;
+                        try {
+                            await refreshWorkflowLogs(workflowLogsOffset);
+                            refreshBtn.classList.remove('loading');
+                            refreshBtn.classList.add('success');
+                            refreshBtn.textContent = '✓';
+                            setTimeout(() => {
+                                refreshBtn.classList.remove('success');
+                                refreshBtn.textContent = originalText;
+                            }, 1500);
+                        } catch (err) {
+                            refreshBtn.classList.remove('loading');
+                            refreshBtn.classList.add('error');
+                            refreshBtn.textContent = '✗';
+                            setTimeout(() => {
+                                refreshBtn.classList.remove('error');
+                                refreshBtn.textContent = originalText;
+                            }, 1500);
+                        }
+                    });
+                }
+            });
+
+            await refreshWorkflowLogs(0);
+        } catch (err) {
+            console.error('Failed to load workflow:', err);
+        }
+    }
+
+    function renderLevels(levels, personas) {
+        if (levels.length === 0) {
+            levels = [[]];
+        }
+        
+        return levels.map((level, levelIndex) => {
+            const slotsHtml = level.map((personaId, slotIndex) => {
+                const persona = personas.find(p => p.id === personaId);
+                const personaName = persona ? persona.name : personaId;
+                return `
+                    <div class="wf-slot filled" data-level="${levelIndex}" data-slot="${slotIndex}" data-persona-id="${personaId}">
+                        <span class="wf-slot-name">${escapeHtml(personaName)}</span>
+                        <button class="wf-slot-remove" title="Remove">×</button>
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div class="wf-level" data-level="${levelIndex}">
+                    <div class="wf-level-header">
+                        <span class="wf-level-label">Level ${levelIndex}</span>
+                        ${levelIndex > 0 ? '<button class="wf-level-remove" title="Remove level">×</button>' : ''}
+                    </div>
+                    <div class="wf-level-slots">
+                        ${slotsHtml}
+                        <div class="wf-slot placeholder" data-level="${levelIndex}" data-slot="${level.length}">
+                            <span class="wf-slot-plus">+</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function setupWorkflowDragDrop(editor, instancePath, workflowId, personas) {
+        const levelsContainer = editor.querySelector('.wf-levels-container');
+        
+        levelsContainer.addEventListener('dragover', (e) => {
+            const slot = e.target.closest('.wf-slot');
+            if (slot && slot.classList.contains('placeholder')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                slot.classList.add('drag-over');
+            } else if (slot && slot.classList.contains('filled')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'none';
+            }
+        });
+
+        levelsContainer.addEventListener('dragleave', (e) => {
+            const slot = e.target.closest('.wf-slot');
+            if (slot) {
+                slot.classList.remove('drag-over');
+            }
+        });
+
+        levelsContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const slot = e.target.closest('.wf-slot');
+            if (!slot) return;
+            
+            slot.classList.remove('drag-over');
+            
+            if (!slot.classList.contains('placeholder')) {
+                slot.classList.add('drop-rejected');
+                setTimeout(() => slot.classList.remove('drop-rejected'), 300);
+                return;
+            }
+            
+            const personaId = e.dataTransfer.getData('text/plain');
+            if (!personaId) return;
+
+            const levelIndex = parseInt(slot.dataset.level);
+            const slotIndex = parseInt(slot.dataset.slot);
+
+            addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personaId, personas);
+        });
+
+        levelsContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('wf-slot-remove')) {
+                const slot = e.target.closest('.wf-slot');
+                const levelIndex = parseInt(slot.dataset.level);
+                const slotIndex = parseInt(slot.dataset.slot);
+                removePersonaFromLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personas);
+            }
+            
+            if (e.target.classList.contains('wf-level-remove')) {
+                const level = e.target.closest('.wf-level');
+                const levelIndex = parseInt(level.dataset.level);
+                removeLevel(editor, instancePath, workflowId, levelIndex, personas);
+            }
+            
+            const placeholderSlot = e.target.closest('.wf-slot.placeholder');
+            if (placeholderSlot && !e.target.classList.contains('wf-slot-remove')) {
+                const levelIndex = parseInt(placeholderSlot.dataset.level);
+                const slotIndex = parseInt(placeholderSlot.dataset.slot);
+                openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId);
+            }
+        });
+    }
+
+    async function addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personaId, personas) {
+        const levels = getLevelsFromEditor(editor);
+        
+        while (levels.length <= levelIndex) {
+            levels.push([]);
+        }
+        
+        if (slotIndex >= levels[levelIndex].length) {
+            levels[levelIndex].push(personaId);
+        } else {
+            levels[levelIndex][slotIndex] = personaId;
+        }
+
+        await saveWorkflowLevels(editor, instancePath, workflowId, levels);
+        refreshLevelsUI(editor, levels, personas);
+    }
+
+    async function removePersonaFromLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personas) {
+        const levels = getLevelsFromEditor(editor);
+        
+        if (levels[levelIndex] && slotIndex < levels[levelIndex].length) {
+            levels[levelIndex].splice(slotIndex, 1);
+        }
+
+        await saveWorkflowLevels(editor, instancePath, workflowId, levels);
+        refreshLevelsUI(editor, levels, personas);
+    }
+
+    function addLevel(editor, instancePath, workflowId, personas) {
+        const levels = getLevelsFromEditor(editor);
+        levels.push([]);
+        refreshLevelsUI(editor, levels, personas);
+        saveWorkflowLevels(editor, instancePath, workflowId, levels);
+    }
+
+    async function removeLevel(editor, instancePath, workflowId, levelIndex, personas) {
+        const levels = getLevelsFromEditor(editor);
+        if (levels.length > 1 && levelIndex > 0) {
+            levels.splice(levelIndex, 1);
+            await saveWorkflowLevels(editor, instancePath, workflowId, levels);
+            refreshLevelsUI(editor, levels, personas);
+        }
+    }
+
+    function getLevelsFromEditor(editor) {
+        const levelNodes = editor.querySelectorAll('.wf-level');
+        const levels = [];
+        levelNodes.forEach(levelNode => {
+            const slots = [];
+            levelNode.querySelectorAll('.wf-slot.filled').forEach(slot => {
+                slots.push(slot.dataset.personaId);
+            });
+            levels.push(slots);
+        });
+        return levels;
+    }
+
+    function refreshLevelsUI(editor, levels, personas) {
+        const container = editor.querySelector('.wf-levels-container');
+        container.innerHTML = renderLevels(levels, personas);
+    }
+
+    async function saveWorkflowLevels(editor, instancePath, workflowId, levels) {
+        const indicator = editor.querySelector('.wf-save-indicator');
+        indicator.textContent = '⏳';
+        indicator.className = 'wf-save-indicator saving';
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ levels })
+            });
+            
+            if (!response.ok) throw new Error('Failed to save');
+            
+            indicator.textContent = '✓';
+            indicator.className = 'wf-save-indicator saved';
+            
+            setTimeout(() => {
+                indicator.textContent = '';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to save workflow:', err);
+            indicator.textContent = '⚠';
+            indicator.className = 'wf-save-indicator error';
+        }
+    }
+
+    async function saveWorkflowEverySecs(editor, instancePath, workflowId, everySecs) {
+        const indicator = editor.querySelector('.wf-save-indicator');
+        indicator.textContent = '⏳';
+        indicator.className = 'wf-save-indicator saving';
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ every_secs: everySecs })
+            });
+            
+            if (!response.ok) throw new Error('Failed to save');
+            
+            indicator.textContent = '✓';
+            indicator.className = 'wf-save-indicator saved';
+            
+            setTimeout(() => {
+                indicator.textContent = '';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to save workflow schedule:', err);
+            indicator.textContent = '⚠';
+            indicator.className = 'wf-save-indicator error';
+        }
+    }
+
+    async function saveWorkflowField(editor, instancePath, workflowId, field, value) {
+        const indicator = editor.querySelector('.wf-save-indicator');
+        indicator.textContent = '⏳';
+        indicator.className = 'wf-save-indicator saving';
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [field]: value })
+            });
+            
+            if (!response.ok) throw new Error('Failed to save');
+            
+            indicator.textContent = '✓';
+            indicator.className = 'wf-save-indicator saved';
+            
+            setTimeout(() => {
+                indicator.textContent = '';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to save workflow field:', err);
+            indicator.textContent = '⚠';
+            indicator.className = 'wf-save-indicator error';
+        }
+    }
+
+    function openInlinePersonaCreator(instancePath, insertAfterBtn) {
+        if (currentInlineEditor) {
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+        }
+
+        const defaultId = `persona-${Date.now()}`;
+
+        const creatorHtml = `
+            <div class="persona-creator-inline">
+                <div class="creator-header">
+                    <span class="creator-title">New Persona</span>
+                </div>
+                <div class="creator-body">
+                    <div class="persona-field">
+                        <label>ID</label>
+                        <input type="text" class="persona-input creator-field" data-field="id" value="${escapeHtml(defaultId)}">
+                    </div>
+                    <div class="persona-field">
+                        <label>Name</label>
+                        <input type="text" class="persona-input creator-field" data-field="name" placeholder="Enter persona name">
+                    </div>
+                    <div class="persona-field">
+                        <label>Avatar URL</label>
+                        <input type="text" class="persona-input creator-field" data-field="avatar" placeholder="https://example.com/avatar.png">
+                    </div>
+                    <div class="persona-field">
+                        <label>Role</label>
+                        <input type="text" class="persona-input creator-field" data-field="role" placeholder="2-3 words position title, like: UIX Designer, Frontend engineer">
+                    </div>
+                    <div class="persona-field">
+                        <label>Agent</label>
+                        <input type="text" class="persona-input creator-field" data-field="agent" placeholder="cc_docker">
+                    </div>
+                    <div class="persona-field">
+                        <label>About</label>
+                        <textarea class="persona-input persona-textarea creator-field" data-field="about" rows="3" placeholder="This is system_prompt (will be used as system prompt for LLMs)"></textarea>
+                    </div>
+                    <div class="persona-field">
+                        <label>Task</label>
+                        <textarea class="persona-input persona-textarea creator-field" data-field="task" rows="5" placeholder="Task description for this persona. 3 sentences max. Begin with a VERB. Example: 'Suggest an improvement or a small feature to develop during the next sprint. You call the shots and decide what gets built first. Over-scoping kills projects. Your reply should be exactly 1 sentence.'"></textarea>
+                    </div>
+                    <div class="creator-actions">
+                        <button class="creator-cancel-btn">Cancel</button>
+                        <button class="creator-create-btn">Create</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        insertAfterBtn.insertAdjacentHTML('afterend', creatorHtml);
+        currentInlineEditor = insertAfterBtn.nextElementSibling;
+        currentInlineEditor.dataset.instancePath = instancePath;
+
+        currentInlineEditor.addEventListener('click', (e) => e.stopPropagation());
+        currentInlineEditor.addEventListener('focusin', (e) => e.stopPropagation());
+
+        const idInput = currentInlineEditor.querySelector('[data-field="id"]');
+        if (idInput) {
+            idInput.focus();
+            idInput.select();
+        }
+
+        currentInlineEditor.querySelector('.creator-cancel-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+        });
+
+        currentInlineEditor.querySelector('.creator-create-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            createPersona(instancePath, currentInlineEditor);
+        });
+    }
+
+    function openInlineWorkflowCreator(instancePath, insertAfterBtn) {
+        if (currentInlineEditor) {
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+        }
+
+        const defaultId = `workflow-${Date.now()}`;
+
+        const creatorHtml = `
+            <div class="workflow-creator-inline">
+                <div class="creator-header">
+                    <span class="creator-title">New Workflow</span>
+                </div>
+                <div class="creator-body">
+                    <div class="persona-field">
+                        <label>ID</label>
+                        <input type="text" class="persona-input creator-field" data-field="id" value="${escapeHtml(defaultId)}">
+                    </div>
+                    <div class="persona-field">
+                        <label>Name</label>
+                        <input type="text" class="persona-input creator-field" data-field="name" placeholder="Enter workflow name">
+                    </div>
+                    <div class="persona-field">
+                        <label>Description</label>
+                        <textarea class="persona-input persona-textarea creator-field" data-field="desc" rows="2" placeholder="Optional"></textarea>
+                    </div>
+                    <div class="wf-schedule-field">
+                        <label>Repeat every</label>
+                        <input type="text" class="wf-schedule-input creator-field" data-field="every_secs" pattern="[0-9]*" inputmode="numeric" maxlength="7" value="300">
+                        <span class="wf-schedule-unit">seconds</span>
+                        <span class="info-icon" data-doc="workflow-schedule" title="Learn about scheduling">ⓘ</span>
+                        <span class="wf-schedule-hint">(every 5 minutes)</span>
+                    </div>
+                    <div class="wf-schedule-presets">
+                        <button type="button" class="preset-btn" data-secs="0">manual</button>
+                        <button type="button" class="preset-btn" data-secs="600">10m</button>
+                        <button type="button" class="preset-btn" data-secs="3600">1h</button>
+                        <button type="button" class="preset-btn" data-secs="86400">24h</button>
+                    </div>
+                    <div class="creator-actions">
+                        <button class="creator-cancel-btn">Cancel</button>
+                        <button class="creator-create-btn">Create</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        insertAfterBtn.insertAdjacentHTML('afterend', creatorHtml);
+        currentInlineEditor = insertAfterBtn.nextElementSibling;
+        currentInlineEditor.dataset.instancePath = instancePath;
+
+        currentInlineEditor.addEventListener('click', (e) => e.stopPropagation());
+        currentInlineEditor.addEventListener('focusin', (e) => e.stopPropagation());
+
+        currentInlineEditor.querySelectorAll('.info-icon').forEach(icon => {
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openHelpPanel(icon.dataset.doc);
+            });
+        });
+
+        const everySecsInput = currentInlineEditor.querySelector('[data-field="every_secs"]');
+        if (everySecsInput) {
+            everySecsInput.addEventListener('input', (e) => {
+                const hint = currentInlineEditor.querySelector('.wf-schedule-hint');
+                if (hint) {
+                    hint.textContent = `(${formatEverySecsHint(parseInt(e.target.value) || 0)})`;
+                }
+            });
+        }
+
+        currentInlineEditor.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const secs = btn.dataset.secs;
+                const input = currentInlineEditor.querySelector('[data-field="every_secs"]');
+                if (input) {
+                    input.value = secs;
+                    input.dispatchEvent(new Event('input'));
+                }
+            });
+        });
+
+        const idInput = currentInlineEditor.querySelector('[data-field="id"]');
+        if (idInput) {
+            idInput.focus();
+            idInput.select();
+        }
+
+        currentInlineEditor.querySelector('.creator-cancel-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            currentInlineEditor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+        });
+
+        currentInlineEditor.querySelector('.creator-create-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            createWorkflow(instancePath, currentInlineEditor);
+        });
+    }
+
+    async function createPersona(instancePath, editor) {
+        const createBtn = editor.querySelector('.creator-create-btn');
+        const fields = editor.querySelectorAll('.creator-field');
+        
+        const data = {};
+        fields.forEach(field => {
+            const value = field.value.trim();
+            if (field.dataset.field === 'id') {
+                data.id = value.replace(/[^a-z0-9_-]/g, '-').toLowerCase() || null;
+            } else {
+                data[field.dataset.field] = value;
+            }
+        });
+
+        if (!data.name) {
+            alert('Name is required');
+            return;
+        }
+
+        createBtn.textContent = 'Creating...';
+        createBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: data.id,
+                    name: data.name,
+                    avatar: data.avatar || null,
+                    role: data.role || '',
+                    agent: data.agent || null,
+                    about: data.about || '',
+                    task: data.task || ''
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to create persona');
+
+            editor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+            
+            refreshInstanceContent(instancePath);
+        } catch (err) {
+            console.error('Failed to create persona:', err);
+            createBtn.textContent = 'Create';
+            createBtn.disabled = false;
+            alert('Failed to create persona');
+        }
+    }
+
+    async function createWorkflow(instancePath, editor) {
+        const createBtn = editor.querySelector('.creator-create-btn');
+        const fields = editor.querySelectorAll('.creator-field');
+        
+        const data = {};
+        fields.forEach(field => {
+            const value = field.value.trim();
+            if (field.dataset.field === 'id') {
+                data.id = value.replace(/[^a-z0-9_-]/g, '-').toLowerCase() || `workflow-${Date.now()}`;
+            } else {
+                data[field.dataset.field] = value;
+            }
+        });
+
+        if (!data.name) {
+            alert('Name is required');
+            return;
+        }
+
+        if (data.id && !/^[a-zA-Z0-9_-]+$/.test(data.id)) {
+            alert('ID can only contain letters, digits, underscores and hyphens');
+            return;
+        }
+
+        createBtn.textContent = 'Creating...';
+        createBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: data.id,
+                    name: data.name,
+                    desc: data.desc || '',
+                    every_secs: parseInt(data.every_secs) ?? 0
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to create workflow');
+
+            editor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+            
+            refreshInstanceContent(instancePath);
+        } catch (err) {
+            console.error('Failed to create workflow:', err);
+            createBtn.textContent = 'Create';
+            createBtn.disabled = false;
+            alert('Failed to create workflow');
+        }
+    }
+
+    async function deletePersona(instancePath, personaId, editor) {
+        const deleteBtn = editor.querySelector('[data-action="delete-persona"]');
+        if (deleteBtn) {
+            deleteBtn.textContent = 'Deleting...';
+            deleteBtn.disabled = true;
+        }
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas/${encodeURIComponent(personaId)}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    alert('This persona no longer exists');
+                } else {
+                    throw new Error('Failed to delete');
+                }
+                if (deleteBtn) {
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.disabled = false;
+                }
+                return;
+            }
+
+            closeInlinePersonaEditor();
+            delete personaCache[instancePath];
+            refreshInstanceContent(instancePath);
+        } catch (err) {
+            console.error('Failed to delete persona:', err);
+            if (deleteBtn) {
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.disabled = false;
+            }
+            alert('Failed to delete persona');
+        }
+    }
+
+    async function deleteWorkflow(instancePath, workflowId, editor) {
+        const deleteBtn = editor.querySelector('[data-action="delete-workflow"]');
+        if (deleteBtn) {
+            deleteBtn.textContent = 'Deleting...';
+            deleteBtn.disabled = true;
+        }
+
+        try {
+            const response = await fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    alert('This workflow no longer exists');
+                } else {
+                    throw new Error('Failed to delete');
+                }
+                if (deleteBtn) {
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.disabled = false;
+                }
+                return;
+            }
+
+            const logsPanel = editor.nextElementSibling;
+            if (logsPanel && logsPanel.classList.contains('workflow-logs-panel')) {
+                logsPanel.remove();
+            }
+            editor.remove();
+            currentInlineEditor = null;
+            clearEditingState();
+            delete workflowCache[instancePath];
+            refreshInstanceContent(instancePath);
+        } catch (err) {
+            console.error('Failed to delete workflow:', err);
+            if (deleteBtn) {
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.disabled = false;
+            }
+            alert('Failed to delete workflow');
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeHelpPanel();
+            closeInlinePersonaEditor();
+            closeInlineWorkflowEditor();
+        }
+    });
+});

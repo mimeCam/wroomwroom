@@ -1,0 +1,2 @@
+#!/bin/bash
+openloop-runner api-work "The task is about API & www frontend. $1"

@@ -1,0 +1,194 @@
+#
+# Based on:
+# https://github.com/anthropics/claude-code/tree/main/.devcontainer
+#
+# Disabled anthropic-only firewall config
+# Installing more packages, chromium, etc...
+#
+
+FROM node:20
+
+ARG TZ
+ENV TZ="$TZ"
+
+ARG CLAUDE_CODE_VERSION=latest
+
+# Install basic development tools and iptables/ipset
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  less \
+  git \
+  procps \
+  sudo \
+  fzf \
+  zsh \
+  man-db \
+  unzip \
+  gnupg2 \
+  gh \
+  iptables \
+  ipset \
+  iproute2 \
+  dnsutils \
+  aggregate \
+  jq \
+  nano \
+  vim \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Ensure default node user has access to /usr/local/share
+RUN mkdir -p /usr/local/share/npm-global && \
+  chown -R node:node /usr/local/share
+
+ARG USERNAME=node
+
+# Persist bash history.
+RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+  && mkdir /commandhistory \
+  && touch /commandhistory/.bash_history \
+  && chown -R $USERNAME /commandhistory
+
+# Set `DEVCONTAINER` environment variable to help with orientation
+ENV DEVCONTAINER=true
+
+# Create workspace and config directories and set permissions
+RUN mkdir -p /workspace /home/node/.claude && \
+  chown -R node:node /workspace /home/node/.claude
+
+WORKDIR /workspace
+
+ARG GIT_DELTA_VERSION=0.18.2
+RUN ARCH=$(dpkg --print-architecture) && \
+  wget "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
+  sudo dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
+  rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
+
+# Set up non-root user
+USER node
+
+# Install global packages
+ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV PATH=$PATH:/usr/local/share/npm-global/bin
+
+# Set the default shell to zsh rather than sh
+ENV SHELL=/bin/zsh
+
+# Set the default editor and visual
+ENV EDITOR=nano
+ENV VISUAL=nano
+
+# Default powerline10k theme
+ARG ZSH_IN_DOCKER_VERSION=1.2.0
+RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v${ZSH_IN_DOCKER_VERSION}/zsh-in-docker.sh)" -- \
+  -p git \
+  -p fzf \
+  -a "source /usr/share/doc/fzf/examples/key-bindings.zsh" \
+  -a "source /usr/share/doc/fzf/examples/completion.zsh" \
+  -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+  -x
+
+# Install Claude
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+
+
+
+#
+# # BEGIN modifications section
+#
+
+# # Copy and set up firewall script
+# COPY init-firewall.sh /usr/local/bin/
+# USER root
+# RUN chmod +x /usr/local/bin/init-firewall.sh && \
+#   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
+#   chmod 0440 /etc/sudoers.d/node-firewall
+# USER node
+
+
+
+#
+# # EXTRA section
+#
+USER root
+
+# yq - this installs outdated version
+RUN apt update && apt install -y less \
+    python-is-python3 build-essential make iputils-ping nano curl sudo \
+    jq \
+    netcat-openbsd \
+    sed bat fd-find ripgrep \
+    lsof net-tools \
+    sqlite3 \
+    chromium
+
+# # RUN apt update && apt install -y chromium
+# # chromedp/headless-shell/
+# # # yukinying/chrome-headless-browser-stable
+RUN mkdir -p /opt/google/chrome
+RUN echo '#!/bin/sh' > /usr/bin/google-chrome-unstable && \
+    echo 'exec /usr/bin/chromium --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --no-first-run --no-default-browser-check --autoConnect --user-data-dir=/tmp/chrome-debug "$@"' >> /usr/bin/google-chrome-unstable && \
+    chmod +x /usr/bin/google-chrome-unstable
+#
+RUN echo '#!/bin/sh' > /usr/bin/google-chrome && \
+    echo 'exec /usr/bin/chromium --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --no-first-run --no-default-browser-check --autoConnect --user-data-dir=/tmp/chrome-debug "$@"' >> /usr/bin/google-chrome && \
+    chmod +x /usr/bin/google-chrome
+#
+RUN echo '#!/bin/sh' > /opt/google/chrome/chrome && \
+    echo 'exec /usr/bin/chromium --headless --remote-debugging-port=9222 --no-sandbox --disable-gpu --no-first-run --no-default-browser-check --autoConnect --user-data-dir=/tmp/chrome-debug "$@"' >> /opt/google/chrome/chrome && \
+    chmod +x /opt/google/chrome/chrome
+
+RUN npm install -g chrome-devtools-mcp
+
+# Install LSP servers for Python, TypeScript, and Rust
+RUN npm install -g pyright typescript
+RUN npm install -g @anthropic-ai/typescript-analyzer || true
+
+
+
+USER node
+
+# Install Rust and rust-analyzer
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN /home/node/.cargo/bin/rustup component add rust-analyzer
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.profile
+RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.bashrc
+
+RUN curl -fsSL https://opencode.ai/install | bash
+
+RUN echo 'export PATH=$HOME/.opencode/bin:$PATH' >> ~/.profile
+RUN echo 'export PATH=$HOME/.opencode/bin:$PATH' >> ~/.bashrc
+
+RUN mkdir -p /home/node/.local/share/opencode && \
+    chown -R node:node /home/node/.local/share/opencode
+RUN mkdir -p /home/node/.config/opencode && \
+    chown -R node:node /home/node/.config/opencode
+
+USER root
+RUN ln -s /home/node/.opencode/bin/opencode /usr/local/bin/opencode
+RUN ln -s /home/node/.local/bin/uv /usr/local/bin/uv
+RUN ln -s /home/node/.local/bin/uvx /usr/local/bin/uvx
+USER node
+
+# Swift lang
+RUN curl -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && \
+    tar zxf swiftly-$(uname -m).tar.gz && \
+    ./swiftly init --quiet-shell-followup && \
+    . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh" && \
+    echo '. "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"' >> ~/.zshrc && \
+    echo '. "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"' >> ~/.bashrc && \
+    hash -r
+USER root
+RUN ln -s /home/node/.local/share/swiftly/bin/swift /usr/local/bin/swift
+RUN ln -s /home/node/.local/share/swiftly/bin/swiftc /usr/local/bin/swiftc
+USER node
+
+#
+# Clean up
+#
+USER root
+# Delete curl so LLM does not try to fetch webpages with it - there is MCP for that, that also converts html into minimazed markdown
+RUN apt remove -y curl wget # sudo
+USER node

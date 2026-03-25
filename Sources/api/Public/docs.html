@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>OpenLoop Documentation</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="styles.css" />
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    </head>
+    <body class="docs-page">
+        <div class="docs-layout">
+            <aside class="docs-sidebar">
+                <div class="docs-sidebar-header">
+                    <div class="lang-switcher" role="group" aria-label="Language selection">
+                        <button class="lang-btn active" data-lang="en" aria-label="Switch to English" aria-pressed="true">🇬🇧</button>
+                        <button class="lang-btn" data-lang="fr" aria-label="Passer au français" aria-pressed="false">🇫🇷</button>
+                    </div>
+                </div>
+                <nav class="docs-nav" id="docs-nav" aria-label="Documentation contents">
+                    <div class="docs-nav-loading">Loading...</div>
+                </nav>
+            </aside>
+            <main class="docs-content" id="docs-content">
+                <div class="docs-content-inner">
+                    <div class="docs-loading">Select a topic from the sidebar to begin</div>
+                </div>
+            </main>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const docsNav = document.getElementById('docs-nav');
+                const docsContent = document.getElementById('docs-content');
+                const contentInner = docsContent.querySelector('.docs-content-inner');
+                
+                let currentLang = localStorage.getItem('openloop-lang') || 'en';
+                let currentDoc = null;
+                let contentsData = [];
+
+                function setLanguage(lang) {
+                    currentLang = lang;
+                    localStorage.setItem('openloop-lang', lang);
+                    
+                    document.querySelectorAll('.lang-btn').forEach(btn => {
+                        const isActive = btn.dataset.lang === lang;
+                        btn.classList.toggle('active', isActive);
+                        btn.setAttribute('aria-pressed', isActive);
+                    });
+                    
+                    if (currentDoc) {
+                        loadDoc(currentDoc);
+                    }
+                }
+
+                function initLanguageButtons() {
+                    document.querySelectorAll('.lang-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            setLanguage(btn.dataset.lang);
+                        });
+                        
+                        const isActive = btn.dataset.lang === currentLang;
+                        btn.classList.toggle('active', isActive);
+                        btn.setAttribute('aria-pressed', isActive);
+                    });
+                }
+
+                async function fetchMarkdown(filename) {
+                    const langResponse = await fetch(`/docs/${filename}.${currentLang}.md`);
+                    if (langResponse.ok) {
+                        return await langResponse.text();
+                    }
+                    
+                    if (currentLang !== 'en') {
+                        const enResponse = await fetch(`/docs/${filename}.en.md`);
+                        if (enResponse.ok) {
+                            return await enResponse.text();
+                        }
+                    }
+                    
+                    throw new Error('Content not found');
+                }
+
+                async function loadContents() {
+                    try {
+                        const response = await fetch('/docs/contents.md');
+                        const text = await response.text();
+                        parseContents(text);
+                        renderNav();
+                        
+                        const params = new URLSearchParams(window.location.search);
+                        const docParam = params.get('doc');
+                        if (docParam && contentsData.find(c => c.id === docParam)) {
+                            loadDoc(docParam);
+                        } else if (contentsData.length > 0) {
+                            loadDoc(contentsData[0].id);
+                        }
+                    } catch (err) {
+                        docsNav.innerHTML = '<div class="docs-nav-error">Failed to load contents</div>';
+                    }
+                }
+
+                function parseContents(text) {
+                    const lines = text.split('\n');
+                    contentsData = [];
+                    
+                    lines.forEach(line => {
+                        const match = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
+                        if (match) {
+                            const title = match[1];
+                            const href = match[2];
+                            const id = href.replace(/\.md$/, '');
+                            contentsData.push({ id, title, href });
+                        }
+                    });
+                }
+
+                function renderNav() {
+                    const navHtml = contentsData.map(item => `
+                        <a href="?doc=${encodeURIComponent(item.id)}" 
+                           class="docs-nav-item${currentDoc === item.id ? ' active' : ''}"
+                           data-doc="${item.id}">
+                            ${escapeHtml(item.title)}
+                        </a>
+                    `).join('');
+                    
+                    docsNav.innerHTML = navHtml;
+                    
+                    docsNav.querySelectorAll('.docs-nav-item').forEach(link => {
+                        link.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            const docId = link.dataset.doc;
+                            loadDoc(docId);
+                            history.pushState({ doc: docId }, '', `?doc=${encodeURIComponent(docId)}`);
+                        });
+                    });
+                }
+
+                async function loadDoc(docId) {
+                    currentDoc = docId;
+                    
+                    docsNav.querySelectorAll('.docs-nav-item').forEach(item => {
+                        item.classList.toggle('active', item.dataset.doc === docId);
+                    });
+                    
+                    contentInner.innerHTML = '<div class="docs-loading">Loading...</div>';
+                    
+                    try {
+                        const mdContent = await fetchMarkdown(docId);
+                        contentInner.innerHTML = marked.parse(mdContent);
+                        
+                        contentInner.querySelectorAll('a').forEach(link => {
+                            const href = link.getAttribute('href');
+                            if (href && href.endsWith('.md')) {
+                                const docName = href.replace(/\.md$/, '');
+                                if (contentsData.find(c => c.id === docName)) {
+                                    link.addEventListener('click', (e) => {
+                                        e.preventDefault();
+                                        loadDoc(docName);
+                                        history.pushState({ doc: docName }, '', `?doc=${encodeURIComponent(docName)}`);
+                                    });
+                                }
+                            }
+                        });
+                        
+                        docsContent.scrollTop = 0;
+                    } catch (err) {
+                        contentInner.innerHTML = '<div class="docs-error">Content not found</div>';
+                    }
+                }
+
+                function escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                }
+
+                window.addEventListener('popstate', (e) => {
+                    if (e.state && e.state.doc) {
+                        loadDoc(e.state.doc);
+                    }
+                });
+
+                initLanguageButtons();
+                loadContents();
+            });
+        </script>
+    </body>
+</html>

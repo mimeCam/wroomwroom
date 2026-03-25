@@ -1,0 +1,26 @@
+
+- Examples
+    - `feature-work` workflow 
+        - visual development
+        - screenshot picking as feature developement
+            - send asks in plain language
+            - ai researches/codes/tests
+            - you pick 1 from 2 screenshots: before and after
+        - 
+        - Personas
+            - Architect
+            - UI Designer
+            - UX Researcher
+        - Code agent features
+            - skills
+        - Custom Git strategies
+            - Commit step as Persona's agent
+            - New Workspace as step
+        - Agents as commands 
+            - A/B with screenshots
+    - 
+    - `living-web` workflow
+    - 
+    - `24/7` workflow
+        - dedicated markdown file(s) as state
+-

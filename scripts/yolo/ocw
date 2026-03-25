@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+
+N="ocw"
+# IMG="ghcr.io/anomalyco/opencode" # does not include git and goodies
+IMG="yolo_devcontainer"
+
+ROOT="$PWD"
+SHARE="$HOME/.local/share"
+CONFIG="$SHARE/yolo"
+
+mkdir -p "$CONFIG"
+
+docker run --rm -it \
+    -v /etc/localtime:/etc/localtime:ro \
+    -p 2323:2323 \
+    -v "$SHARE/opencode:/home/node/.local/share/opencode" \
+    -v "$CONFIG/oc_opencode.json:/home/node/.config/opencode/opencode.json" \
+	-v "$ROOT:$ROOT" \
+	-w "$ROOT" \
+	--name=$N \
+	$IMG opencode web --hostname 0.0.0.0 --port 2323

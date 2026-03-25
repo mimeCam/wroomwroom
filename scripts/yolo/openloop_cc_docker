@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+#
+# openloop_cc_docker - Run openloop with docker containerization
+# Usage: openloop_cc_docker "persona" "prompt" ["system_prompt"] ["mode"]
+#   2 args:  persona, prompt
+#   3 args:  persona, prompt, system_prompt
+#   4 args:  persona, prompt, system_prompt, mode
+#
+# Supports stdin streaming
+#
+
+use_tier=true
+
+IMAGE="yolo_devcontainer"
+
+# Handle optional parameters
+PERSONA=""
+if [ $# -ge 1 ]; then
+    PERSONA="$1"
+fi
+PROMPT=""
+if [ $# -ge 2 ]; then
+    PROMPT="$2"
+fi
+SYSTEM_PROMPT=""
+if [ $# -ge 3 ]; then
+    SYSTEM_PROMPT="$3"
+fi
+# "acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"
+# MODE="bypassPermissions"
+MODE="bypassPermissions" # fine with --dangerously-skip-permissions?
+if [ $# -ge 4 ]; then
+    MODE="$4"
+fi
+
+# Validate required parameters
+if [ -z "$PERSONA" ]; then
+    echo "Error: PERSONA is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+
+if [ -z "$PROMPT" ]; then
+    echo "Error: PROMPT is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+
+ROOT="$PWD"
+
+# Check that openloop directory exists
+if [ ! -d "$ROOT/openloop" ]; then
+    echo "Error: openloop directory not found in $ROOT" >&2
+    exit 1
+fi
+
+if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    PRJ="$ROOT"
+else
+    PRJ="$PWD/openloop/knowledge/$PERSONA"
+fi
+
+mkdir -p "$PRJ"
+
+# Determine MCP config path with priority
+MCP_CONFIG_PATH=""
+USE_STRICT_MCP=""
+if [ -f "$ROOT/openloop/personas/$PERSONA-mcp-yolo-strict.json" ]; then
+    MCP_CONFIG_PATH="$ROOT/openloop/personas/$PERSONA-mcp-yolo-strict.json"
+    USE_STRICT_MCP="--strict-mcp-config"
+elif [ -f "$ROOT/openloop/personas/$PERSONA-mcp-yolo.json" ]; then
+    MCP_CONFIG_PATH="$ROOT/openloop/personas/$PERSONA-mcp-yolo.json"
+elif [ -f "$ROOT/openloop/mcp-yolo-strict.json" ]; then
+    MCP_CONFIG_PATH="$ROOT/openloop/mcp-yolo-strict.json"
+    USE_STRICT_MCP="--strict-mcp-config"
+else
+    MCP_CONFIG_PATH="$ROOT/openloop/mcp-yolo.json"
+fi
+
+if [ "$use_tier" = false ]; then
+    API_KEY=""
+    API_ENDPOINT=""
+
+    if [ -z "$API_KEY" ] || [ -z "$API_ENDPOINT" ]; then
+        echo "Error: API_KEY and API_ENDPOINT must be set in API_KEY mode"
+        exit 1
+    fi
+fi
+
+if [ "$use_tier" = true ]; then
+    #
+    # Checking your claude usage:
+    # https://claude.ai/settings/usage
+    #
+    CLAUDE_SYNC_ITEMS=".credentials.json CLAUDE.md settings.json"
+    CLAUDE_SBX=$(mktemp -d)
+    [ -f "$HOME/.claude.json" ] && cp "$HOME/.claude.json" "$CLAUDE_SBX/"
+    [ -f "$HOME/.claude.json.backup" ] && cp "$HOME/.claude.json.backup" "$CLAUDE_SBX/"
+    mkdir -p "$CLAUDE_SBX/.claude"
+    for item in $CLAUDE_SYNC_ITEMS; do
+        [ -e "$HOME/.claude/$item" ] && cp -R "$HOME/.claude/$item" "$CLAUDE_SBX/.claude/"
+    done
+
+    restore() {
+        [ -f "$CLAUDE_SBX/.claude.json" ] && cp "$CLAUDE_SBX/.claude.json" "$HOME/.claude.json"
+        [ -f "$CLAUDE_SBX/.claude.json.backup" ] && cp "$CLAUDE_SBX/.claude.json.backup" "$HOME/.claude.json.backup"
+        mkdir -p "$HOME/.claude"
+        for item in $CLAUDE_SYNC_ITEMS; do
+            [ -e "$CLAUDE_SBX/.claude/$item" ] && cp -R "$CLAUDE_SBX/.claude/$item" "$HOME/.claude/"
+        done
+        rm -rf "$CLAUDE_SBX"
+    }
+    on_exit() {
+        if [ $? -eq 0 ]; then
+            restore
+        else
+            echo "ERR. Docker run failed, cc-config files NOT restored."
+            rm -rf "$CLAUDE_SBX"
+        fi
+    }
+    trap on_exit EXIT
+fi
+
+# No stdin modification - let it flow directly to claude
+
+# Determine volume mounts based on mode
+VOLUME_MOUNTS=(-v "$ROOT:$ROOT")
+if [ "${MODE}" == "plan" ]; then
+    VOLUME_MOUNTS=(-v "$ROOT:$ROOT:ro")
+else
+    VOLUME_MOUNTS=(-v "$ROOT:$ROOT" -v "$ROOT/openloop:$ROOT/openloop:ro")
+fi
+
+# Build claude command following yolo_claude.sh pattern
+C2=". /home/node/.local/bin/env"
+SKIP_PERMISSIONS_FLAG=""
+if [ "${MODE}" != "plan" ]; then
+    SKIP_PERMISSIONS_FLAG="--dangerously-skip-permissions"
+fi
+CLAUDE_CMD="claude ${SKIP_PERMISSIONS_FLAG} \
+    --permission-mode \"${MODE}\" \
+    --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" \
+    --no-session-persistence \
+    --mcp-config \"${MCP_CONFIG_PATH}\" \
+    ${USE_STRICT_MCP} \
+    -p \"\$PROMPT\""
+    # --chrome
+
+if [ -n "$SYSTEM_PROMPT" ]; then
+    CLAUDE_CMD="$CLAUDE_CMD --system-prompt \"\$SYSTEM_PROMPT\""
+    # --append-system-prompt \"\$SYSTEM_PROMPT\" \
+fi
+
+# Run with or without stdin piping
+if [ -p /dev/stdin ]; then
+    #
+    # To test that  `stdin` support works:
+    # >
+    # echo "my name is Anton" | ./openloop_cc_docker "hi, what is my name?
+    # >
+    #./openloop_cc_docker "hi, what is my name?
+    #
+    if [ "$use_tier" = true ]; then
+        cat | /usr/local/bin/docker run --rm -i \
+            -e ANTHROPIC_LOG=error \
+            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
+            -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
+            -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
+            -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
+            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e "PROMPT=${PROMPT}" \
+            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+            "${VOLUME_MOUNTS[@]}" \
+            -w "$PRJ" \
+            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+    else
+        cat | /usr/local/bin/docker run --rm -i \
+            -v /etc/localtime:/etc/localtime:ro \
+            -e ANTHROPIC_LOG=error \
+            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+            -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
+            -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
+            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e "PROMPT=${PROMPT}" \
+            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+            "${VOLUME_MOUNTS[@]}" \
+            -w "$PRJ" \
+            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+    fi
+else
+    if [ "$use_tier" = true ]; then
+        /usr/local/bin/docker run --rm \
+            -e ANTHROPIC_LOG=error \
+            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
+            -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
+            -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
+            -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
+            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e "PROMPT=${PROMPT}" \
+            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+            "${VOLUME_MOUNTS[@]}" \
+            -w "$PRJ" \
+            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+    else
+        /usr/local/bin/docker run --rm \
+            -v /etc/localtime:/etc/localtime:ro \
+            -e ANTHROPIC_LOG=error \
+            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+            -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
+            -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
+            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e "PROMPT=${PROMPT}" \
+            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+            "${VOLUME_MOUNTS[@]}" \
+            -w "$PRJ" \
+            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+    fi
+fi

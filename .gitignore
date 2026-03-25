@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+.opencode/
+openloop-stderr.log
+openloop-stdout.log
+**/openloop/api-stderr.log
+**/openloop/api-stdout.log
+opencode.db-shm
+opencode.db-wal
+**/openloop/logs.db
+**/openloop/state.json5

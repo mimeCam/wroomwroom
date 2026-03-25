@@ -1,0 +1,235 @@
+import Vapor
+import Foundation
+import SystemPackage
+import shared
+import Subprocess
+
+// Actor to manage state for manually launched workflows
+actor ManualWorkflowRegistry {
+    static let shared = ManualWorkflowRegistry()
+
+    private var activeWorkflows: [String: ManualWorkflowInfo] = [:]
+
+    func add(_ workflow: ManualWorkflowInfo) {
+        activeWorkflows[workflow.id] = workflow
+    }
+
+    func remove(id: String) {
+        activeWorkflows.removeValue(forKey: id)
+    }
+
+    func getAll() -> [ManualWorkflowInfo] {
+        Array(activeWorkflows.values)
+    }
+
+    func get(id: String) -> ManualWorkflowInfo? {
+        activeWorkflows[id]
+    }
+
+    func updateStatus(id: String, status: String, output: String?) {
+        if var workflow = activeWorkflows[id] {
+            workflow.status = status
+            if let output = output {
+                workflow.output = output
+            }
+            activeWorkflows[id] = workflow
+        }
+    }
+}
+
+struct ManualWorkflowInfo: Sendable, Content {
+    var id: String
+    var instancePath: String
+    var workflowId: String
+    var ask: String
+    var startedAt: Date
+    var status: String  // "running", "completed", "failed"
+    var output: String?
+}
+
+struct ManualWorkflowHandler: Sendable {
+
+    func launch(req: Request) async throws -> ManualWorkflowResponse {
+        guard let rawInstancePath = req.parameters.get("id") else {
+            throw Abort(.badRequest)
+        }
+
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+        let launchRequest = try req.content.decode(ManualWorkflowLaunchRequest.self)
+
+        // Validate workflow exists
+        let workflowId = launchRequest.workflow_id
+        let filePath = FilePath(instancePath)
+            .appending("openloop")
+            .appending("workflows")
+            .appending("\(workflowId).\(json)")
+
+        guard PathIO.isFileExistent(atPath: filePath.string),
+              let workflow = try? await FileLoader.loadWorkflowAtPath(filePath) else {
+            throw Abort(.notFound, reason: "Workflow not found: \(workflowId)")
+        }
+
+        // Generate unique run ID
+        let runId = UUID().uuidString
+
+        // Create workflow info
+        let workflowInfo = ManualWorkflowInfo(
+            id: runId,
+            instancePath: instancePath,
+            workflowId: workflowId,
+            ask: launchRequest.ask ?? workflow.ask,
+            startedAt: Date(),
+            status: "running",
+            output: nil
+        )
+
+        // Register the workflow
+        await ManualWorkflowRegistry.shared.add(workflowInfo)
+
+        // Launch in detached task
+        Task.detached {
+            do {
+                let output = try await runManualWorkflow(
+                    instancePath: instancePath,
+                    workflowId: workflowId,
+                    ask: launchRequest.ask ?? workflow.ask,
+                    runId: runId
+                )
+
+                await ManualWorkflowRegistry.shared.updateStatus(
+                    id: runId,
+                    status: "completed",
+                    output: output
+                )
+            } catch {
+                await ManualWorkflowRegistry.shared.updateStatus(
+                    id: runId,
+                    status: "failed",
+                    output: "Error: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        return ManualWorkflowResponse(
+            id: runId,
+            workflow_id: workflowId,
+            ask: workflowInfo.ask,
+            started_at: workflowInfo.startedAt,
+            status: "running",
+            output: nil
+        )
+    }
+
+    func getAll(req: Request) async throws -> ManualWorkflowListResponse {
+        guard let rawInstancePath = req.parameters.get("id") else {
+            throw Abort(.badRequest)
+        }
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+
+        let allWorkflows = await ManualWorkflowRegistry.shared.getAll()
+        let workflows = allWorkflows.filter { $0.instancePath == instancePath }
+
+        return ManualWorkflowListResponse(
+            workflows: workflows.map { info in
+                ManualWorkflowResponse(
+                    id: info.id,
+                    workflow_id: info.workflowId,
+                    ask: info.ask,
+                    started_at: info.startedAt,
+                    status: info.status,
+                    output: info.output
+                )
+            }
+        )
+    }
+
+    func getOne(req: Request) async throws -> ManualWorkflowResponse {
+        guard let rawInstancePath = req.parameters.get("id") else {
+            throw Abort(.badRequest)
+        }
+        guard let rawId = req.parameters.get("runid") else {
+            throw Abort(.badRequest)
+        }
+
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+
+        guard let info = await ManualWorkflowRegistry.shared.get(id: rawId),
+              info.instancePath == instancePath else {
+            throw Abort(.notFound)
+        }
+
+        return ManualWorkflowResponse(
+            id: info.id,
+            workflow_id: info.workflowId,
+            ask: info.ask,
+            started_at: info.startedAt,
+            status: info.status,
+            output: info.output
+        )
+    }
+
+    func delete(req: Request) async throws -> HTTPStatus {
+        guard let rawInstancePath = req.parameters.get("id") else {
+            throw Abort(.badRequest)
+        }
+        guard let rawId = req.parameters.get("runid") else {
+            throw Abort(.badRequest)
+        }
+
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+
+        guard let info = await ManualWorkflowRegistry.shared.get(id: rawId),
+              info.instancePath == instancePath else {
+            throw Abort(.notFound)
+        }
+
+        await ManualWorkflowRegistry.shared.remove(id: rawId)
+        return .noContent
+    }
+}
+
+private func runManualWorkflow(
+    instancePath: String,
+    workflowId: String,
+    ask: String,
+    runId: String
+) async throws -> String {
+    let runnerPath = Paths.bin.appending("openloop-runner")
+
+    guard PathIO.isFileExistent(atPath: runnerPath.string) else {
+        throw Abort(.internalServerError, reason: "Runner not found at \(runnerPath.string)")
+    }
+
+    let args = [workflowId, ask]
+
+    let res = try await exec(
+        runnerPath.string,
+        args: args, chroot: instancePath
+    )
+
+    guard let res, res.notEmpty else {
+        throw Abort(.internalServerError, reason: "Failed to launch workflow manually.")
+    }
+
+    return res
+}
+
+extension ManualWorkflowHandler {
+    struct ManualWorkflowResponse: Content, Sendable {
+        var id: String
+        var workflow_id: String
+        var ask: String
+        var started_at: Date
+        var status: String
+        var output: String?
+    }
+
+    struct ManualWorkflowListResponse: Content, Sendable {
+        var workflows: [ManualWorkflowResponse]
+    }
+
+    struct ManualWorkflowLaunchRequest: Content, Sendable {
+        var workflow_id: String
+        var ask: String?
+    }
+}
