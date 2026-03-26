@@ -139,7 +139,15 @@ private func runWorkflow(
         throw ValidationError("Could not load workflow: \(workflowId)")
     }
 
+    guard w.agent.notEmpty else {
+        throw ValidationError("Workflow has empty `agent` value. Set it to `oc_docker`, `cc_docker` or other custom agent.")
+    }
     let agent = "openloop_\(w.agent)"
+//    let localAgentExists = PathIO.isFileExistent(
+//        atPath: Paths.curDir
+//            .appending("openloop").appending("bin")
+//            .appending(agent).string
+//    )
     let agentExists = PathIO.isFileExistent(
         atPath: Paths.bin.appending(agent).string
     )
@@ -160,8 +168,11 @@ private func runWorkflow(
 //        cleanUpTempFolders(for: preparedPersonas)
 //    }
 
+    let addSingleBottomCompletion: Bool
     var runPersonas: [[PreparedPersona]]
     if preparedPersonas.isEmpty {
+        addSingleBottomCompletion = true
+
         runPersonas = []
 //        runPersonas = [
 //            [
@@ -178,19 +189,23 @@ private func runWorkflow(
 //        ]
     } else {
         runPersonas = preparedPersonas
+
+        addSingleBottomCompletion = (preparedPersonas.last?.count ?? 0) > 1
     }
-    let bottom = PreparedPersona(
-        id: UUID().uuidString,
-        realId: "_bottom_",
-        name: w.name, role: "",
-        about: "",
-        task: "",
-//        folder: Paths.curDir.string,
-        agent: nil
-    )
-    runPersonas.append(
-        [bottom]
-    )
+    if addSingleBottomCompletion {
+        let bottom = PreparedPersona(
+            id: UUID().uuidString,
+            realId: "_bottom_",
+            name: w.name, role: "",
+            about: "",
+            task: "",
+            //        folder: Paths.curDir.string,
+            agent: nil
+        )
+        runPersonas.append(
+            [bottom]
+        )
+    }
 
     let res = try await runGraph(
         workflowId: workflowId,

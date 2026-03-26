@@ -98,7 +98,7 @@ struct WorkflowHandler: Sendable {
             name: updateRequest.name ?? existingWorkflow.name,
             desc: updateRequest.desc ?? existingWorkflow.desc,
             everySecs: updateRequest.every_secs ?? existingWorkflow.everySecs,
-            agent: existingWorkflow.agent,
+            agent: updateRequest.agent ?? existingWorkflow.agent,
             ask: existingWorkflow.ask,
             levels: updateRequest.levels ?? existingWorkflow.levels
         )
@@ -218,6 +218,7 @@ extension WorkflowHandler {
         var desc: String?
         var levels: [[String]]?
         var every_secs: Int?
+        var agent: String?
     }
 
     struct WorkflowCreateRequest: Content, Sendable {

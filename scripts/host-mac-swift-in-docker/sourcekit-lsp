@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#
+
+# /usr/bin/sourcekit-lsp
+swiftbridge-client sourcekit-lsp "$@"

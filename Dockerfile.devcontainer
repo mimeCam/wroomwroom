@@ -171,24 +171,3 @@ RUN ln -s /home/node/.opencode/bin/opencode /usr/local/bin/opencode
 RUN ln -s /home/node/.local/bin/uv /usr/local/bin/uv
 RUN ln -s /home/node/.local/bin/uvx /usr/local/bin/uvx
 USER node
-
-# Swift lang
-RUN curl -O https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz && \
-    tar zxf swiftly-$(uname -m).tar.gz && \
-    ./swiftly init --quiet-shell-followup && \
-    . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh" && \
-    echo '. "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"' >> ~/.zshrc && \
-    echo '. "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"' >> ~/.bashrc && \
-    hash -r
-USER root
-RUN ln -s /home/node/.local/share/swiftly/bin/swift /usr/local/bin/swift
-RUN ln -s /home/node/.local/share/swiftly/bin/swiftc /usr/local/bin/swiftc
-USER node
-
-#
-# Clean up
-#
-USER root
-# Delete curl so LLM does not try to fetch webpages with it - there is MCP for that, that also converts html into minimazed markdown
-RUN apt remove -y curl wget # sudo
-USER node

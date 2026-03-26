@@ -1,0 +1,19 @@
+FROM yolo_devcontainer
+
+#
+# SwiftBridge
+USER root
+COPY scripts/host-mac-swift-in-docker/* /usr/local/bin/
+COPY swiftbridge-client /usr/local/bin/swiftbridge-client
+RUN chmod +x /usr/local/bin/*
+ENV SWIFT_BRIDGE_HOST=host.docker.internal
+ENV SWIFT_BRIDGE_PORT=10100
+USER node
+
+#
+# Clean up
+#
+USER root
+# Delete curl so LLM does not try to fetch webpages with it - there is MCP for that (that also converts html into minimazed markdown).
+RUN apt remove -y curl wget # sudo
+USER node

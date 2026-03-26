@@ -60,7 +60,7 @@ verify_available() {
 # install_yq
 
 verify_available docker
-docker build -f Dockerfile.devcontainer -t "yolo_devcontainer" .
+./_build_docker_containers.sh
 
 verify_available swift
 ./_build_and_install_local.sh

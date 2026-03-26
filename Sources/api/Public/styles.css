@@ -1198,6 +1198,42 @@ body {
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+.wf-agent-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.wf-agent-field label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.wf-agent-input {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    transition: all var(--transition-fast);
+}
+
+.wf-agent-input:hover {
+    border-color: var(--border-light);
+    background: var(--bg-secondary);
+}
+
+.wf-agent-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    background: var(--bg-secondary);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 .wf-subtitle {
     font-size: 13px;
     color: var(--text-muted);

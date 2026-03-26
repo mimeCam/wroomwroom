@@ -156,6 +156,10 @@ private func prepareFolders() {
         atPath: curDirOpenloop.appending("knowledge").string
     )
     assert(created13)
+//    let created14 = PathIO.createDirectoryIfNotExists(
+//        atPath: curDirOpenloop.appending("bin").string
+//    )
+//    assert(created14)
 
     let shareOpenloop = Paths.share.appending("openloop")
     let created20 = PathIO.createDirectoryIfNotExists(

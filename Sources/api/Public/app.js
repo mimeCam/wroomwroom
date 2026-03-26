@@ -1711,6 +1711,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                         <input type="text" class="wf-desc-input" data-field="desc" value="${escapeHtml(workflow.desc || '')}" placeholder="Description (optional)">
+                        <div class="wf-agent-field">
+                            <label>Agent</label>
+                            <input type="text" class="wf-agent-input" data-field="agent" value="${escapeHtml(workflow.agent || '')}" placeholder="Agent identifier (optional)">
+                        </div>
                         <span class="wf-subtitle">Workflow Levels <span class="wf-hint">(drag personas from the left or click +)</span></span>
                     </div>
                     <div class="wf-body">
@@ -1784,6 +1788,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     const value = e.target.value.trim();
                     if (value !== e.target.defaultValue) {
                         saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'desc', value);
+                        e.target.defaultValue = value;
+                    }
+                });
+            }
+
+            const agentInput = currentInlineEditor.querySelector('[data-field="agent"]');
+            if (agentInput) {
+                agentInput.addEventListener('blur', (e) => {
+                    const value = e.target.value.trim();
+                    if (value !== e.target.defaultValue) {
+                        saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'agent', value);
                         e.target.defaultValue = value;
                     }
                 });
@@ -2240,6 +2255,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <label>Description</label>
                         <textarea class="persona-input persona-textarea creator-field" data-field="desc" rows="2" placeholder="Optional"></textarea>
                     </div>
+                    <div class="persona-field">
+                        <label>Agent</label>
+                        <input type="text" class="persona-input creator-field" data-field="agent" placeholder="Agent identifier (optional)">
+                    </div>
                     <div class="wf-schedule-field">
                         <label>Repeat every</label>
                         <input type="text" class="wf-schedule-input creator-field" data-field="every_secs" pattern="[0-9]*" inputmode="numeric" maxlength="7" value="300">
@@ -2402,6 +2421,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     id: data.id,
                     name: data.name,
                     desc: data.desc || '',
+                    agent: data.agent || '',
                     every_secs: parseInt(data.every_secs) ?? 0
                 })
             });
