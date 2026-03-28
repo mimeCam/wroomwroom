@@ -168,11 +168,16 @@ fi
 # While the $SHARE/opencode contains `auth.json` with subscription or API key.
 CONFIG_FILE="$ROOT/openloop/oc_opencode.json"
 if [ ! -f "$CONFIG_FILE" ]; then
-    cat > "$CONFIG_FILE" <<'EOF'
+    FALLBACK="$HOME/.local/share/yolo/oc_opencode.json"
+    if [ -f "$FALLBACK" ]; then
+        CONFIG_FILE="$FALLBACK"
+    else
+        cat > "$CONFIG_FILE" <<'EOF'
 {
     "$schema": "https://opencode.ai/config.json"
 }
 EOF
+    fi
 fi
 
 /usr/local/bin/docker run --rm \

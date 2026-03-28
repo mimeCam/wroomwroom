@@ -18,22 +18,24 @@ rebuild() {
         NEW_NAME="$2"
     fi
 
+    BUILD_DIR=".build/release"
+
     swift build \
         -Xswiftc -strict-concurrency=minimal \
-        -c release --product $EXECUTABLE_NAME
+        -c release --product "$EXECUTABLE_NAME"
 
     if [[ -n "${NEW_NAME:-}" ]]; then
-        mv .build/release/$EXECUTABLE_NAME .build/release/$NEW_NAME
+        mv "$BUILD_DIR/$EXECUTABLE_NAME" "$BUILD_DIR/$NEW_NAME"
         WORKING_NAME="$NEW_NAME"
     fi
 
     echo "Killing old service"
     set +o errexit && set +o nounset && set +o pipefail
-    killall $WORKING_NAME;
-    mv ~/.local/bin/$WORKING_NAME ~/.local/bin/$WORKING_NAME-old;
+    killall "$WORKING_NAME" 2>/dev/null || true
+    mv "$HOME/.local/bin/$WORKING_NAME" "$HOME/.local/bin/$WORKING_NAME-old" 2>/dev/null || true
     set -o errexit && set -o nounset && set -o pipefail
 
-    mv .build/release/$WORKING_NAME ~/.local/bin/
+    mv "$BUILD_DIR/$WORKING_NAME" "$HOME/.local/bin/"
     echo "Moved ${WORKING_NAME} to ~/.local/bin/"
 }
 
@@ -58,8 +60,8 @@ if [ "${1:-}" == "clean" ]; then
     # rm -rf .build/index-build
 fi
 
-mkdir -p $HOME/.local/bin
-cp scripts/yolo/* $HOME/.local/bin/
+mkdir -p "$HOME/.local/bin"
+cp scripts/yolo/* "$HOME/.local/bin/"
 
 main "openloop"
 main "runner" "openloop-runner"
