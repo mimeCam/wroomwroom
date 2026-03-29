@@ -45,7 +45,6 @@ struct openloop: ParsableCommand {
 
 private func prepare() async throws {
     prepareFolders()
-    try await prepareDefaultConfigs()
 
     #if os(macOS)
     try await registerLaunchAgent()
@@ -114,23 +113,6 @@ private func writeFileIfNotExistent(
     guard await File(dest.string).write(data) else {
         throw ValidationError("Failed to write data to a file. \(#function)")
     }
-}
-
-private func prepareDefaultConfigs() async throws {
-    let empty = """
-        {
-            "mcpServers": {}
-        }
-        """.data(using: .utf8)!
-
-//    try await writeFileIfNotExistent(
-//        Paths.share
-//            .appending("openloop").appending("mcp-yolo.json")
-//    ) { empty }
-    try await writeFileIfNotExistent(
-        Paths.curDir
-            .appending("openloop").appending("mcp-yolo.json")
-    ) { empty }
 }
 
 private func prepareFolders() {

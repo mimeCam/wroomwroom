@@ -7,15 +7,22 @@ IMG="yolo_devcontainer"
 
 ROOT="$PWD"
 SHARE="$HOME/.local/share"
-CONFIG="$SHARE/yolo"
 
-mkdir -p "$CONFIG"
+CONFIG_FILE="$HOME/.config/opencode/opencode.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+    mkdir -p "$HOME/.config/opencode"
+    cat > "$CONFIG_FILE" <<'EOF'
+{
+    "$schema": "https://opencode.ai/config.json"
+}
+EOF
+fi
 
 docker run --rm -it \
     -v /etc/localtime:/etc/localtime:ro \
     -p 2323:2323 \
     -v "$SHARE/opencode:/home/node/.local/share/opencode" \
-    -v "$CONFIG/oc_opencode.json:/home/node/.config/opencode/opencode.json" \
+    -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \
 	-v "$ROOT:$ROOT" \
 	-w "$ROOT" \
 	--name=$N \

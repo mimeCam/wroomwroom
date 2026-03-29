@@ -43,7 +43,6 @@ if [ -z "$PROMPT" ]; then
     exit 1
 fi
 
-
 ROOT="$PWD"
 
 # Check that openloop directory exists
@@ -52,13 +51,6 @@ if [ ! -d "$ROOT/openloop" ]; then
     exit 1
 fi
 
-if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
-    PRJ="$ROOT"
-else
-    PRJ="$PWD/openloop/knowledge/$PERSONA"
-fi
-
-mkdir -p "$PRJ"
 
 # Capture piped stdin at top level (before any subshells)
 YOLO_STDIN=""
@@ -133,23 +125,37 @@ EOF
 
 # Determine volume mounts based on mode
 VOLUME_MOUNTS=()
-if [ "${MODE}" == "plan" ]; then
-    VOLUME_MOUNTS=(-v "$ROOT:$ROOT:ro")
-else
-    VOLUME_MOUNTS=(-v "$ROOT:$ROOT" -v "$ROOT/openloop:$ROOT/openloop:ro")
+
+if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
+    VOLUME_MOUNTS+=(-v "$HOME/Library/Developer/Xcode/DerivedData:$HOME/Library/Developer/Xcode/DerivedData:ro")
 fi
 
-if [ -n "$MODE" ] && [ "$MODE" == "plan" ]; then
+if [ "${MODE}" == "plan" ]; then
+    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT:ro")
+else
+    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
+fi
+
+if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    PRJ="$ROOT"
+
+    VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
+else
+    PRJ="$ROOT/openloop"
+
     prepare_agent "$PERSONA" "$SYSTEM_PROMPT"
     MODE="$PERSONA"
+
+    VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
 fi
+# if [ -n "$MODE" ] && [ "$MODE" == "plan" ]; then
+# else
+# fi
 
 if [ -n "$MODE" ]; then
-    # `bash -c` required or $PROMPT_TEXT fails to expand from ENV
-    OCRUN=("bash" "-c" "opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
 else
-    # `bash -c` required or $PROMPT_TEXT fails to expand from ENV
-    OCRUN=("bash" "-c" "opencode run \"\$PROMPT_TEXT\"")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\"")
 fi
 
 
@@ -166,19 +172,18 @@ fi
 # Apply similar logic to config filename.
 # This config file specified default model & MCPs to use.
 # While the $SHARE/opencode contains `auth.json` with subscription or API key.
-CONFIG_FILE="$ROOT/openloop/oc_opencode.json"
+CONFIG_FILE="$HOME/.config/opencode/opencode.json"
 if [ ! -f "$CONFIG_FILE" ]; then
-    FALLBACK="$HOME/.local/share/yolo/oc_opencode.json"
-    if [ -f "$FALLBACK" ]; then
-        CONFIG_FILE="$FALLBACK"
-    else
-        cat > "$CONFIG_FILE" <<'EOF'
+    mkdir -p "$HOME/.config/opencode"
+    cat > "$CONFIG_FILE" <<'EOF'
 {
     "$schema": "https://opencode.ai/config.json"
 }
 EOF
-    fi
 fi
+
+# echo "VOLUME_MOUNTS: ${VOLUME_MOUNTS[@]}"
+# exit 1
 
 /usr/local/bin/docker run --rm \
     -v /etc/localtime:/etc/localtime:ro \
@@ -188,3 +193,4 @@ fi
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
     $IMAGE "${OCRUN[@]}"
+    # $IMAGE tail -F /dev/null

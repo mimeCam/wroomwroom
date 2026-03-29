@@ -43,8 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function fetchInstances(isAutoRefresh = false) {
         console.log('DEBUG: fetchInstances called, isAutoRefresh:', isAutoRefresh);
-        if (isAutoRefresh && currentInlineEditor) {
-            console.log('DEBUG: Skipping fetch due to inline editor');
+        if (isAutoRefresh && (currentInlineEditor || expandedInstances.size > 0)) {
+            console.log('DEBUG: Skipping fetch due to inline editor or expanded instances');
             return;
         }
 
@@ -484,8 +484,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId) {
+    function openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId, allWorkflows) {
         closePersonaSelector();
+
+        const filteredWorkflows = (allWorkflows || []).filter(w => w.id !== workflowId);
 
         const personasHtml = personas.map(p => `
             <div class="persona-selector-item" data-persona-id="${escapeHtml(p.id)}">
@@ -500,17 +502,38 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `).join('');
 
+        const workflowsHtml = filteredWorkflows.map(w => `
+            <div class="persona-selector-item workflow-selector-item" data-workflow-id="${escapeHtml(w.id)}">
+                <span class="workflow-selector-icon">○</span>
+                <div class="persona-selector-info">
+                    <div class="persona-selector-name-row">
+                        <span class="persona-selector-name">${escapeHtml(w.name)}</span>
+                    </div>
+                    ${w.desc ? `<span class="persona-selector-about">${escapeHtml(w.desc)}</span>` : ''}
+                </div>
+            </div>
+        `).join('');
+
         const selectorHtml = `
             <div class="persona-selector" data-level="${levelIndex}" data-slot="${slotIndex}">
                 <div class="persona-selector-header">
                     <div class="persona-selector-title-group">
-                        <h3>Select Persona</h3>
-                        <span class="persona-selector-hint">Hint: you can also drag persona from the left onto workflow's level on the right</span>
+                        <h3>Add to Level</h3>
+                        <span class="persona-selector-hint">Select a persona or workflow to add to this level</span>
                     </div>
                     <button class="persona-selector-close-btn">&times;</button>
                 </div>
+                <div class="picker-tabs">
+                    <button class="picker-tab active" data-tab="personas">Personas</button>
+                    <button class="picker-tab" data-tab="workflows">Workflows</button>
+                </div>
                 <div class="persona-selector-body">
-                    ${personas.length > 0 ? personasHtml : '<div class="persona-selector-empty">No personas available</div>'}
+                    <div class="picker-panel picker-personas-panel">
+                        ${personas.length > 0 ? personasHtml : '<div class="persona-selector-empty">No personas available.<br>Create a persona first to add it to this workflow.</div>'}
+                    </div>
+                    <div class="picker-panel picker-workflows-panel" style="display:none">
+                        ${filteredWorkflows.length > 0 ? workflowsHtml : '<div class="persona-selector-empty">No other workflows available.<br>Create another workflow to use it as an inner step here.</div>'}
+                    </div>
                 </div>
             </div>
         `;
@@ -532,12 +555,33 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
         });
 
-        const items = selector.querySelectorAll('.persona-selector-item');
-        items.forEach(item => {
+        selector.querySelectorAll('.picker-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selector.querySelectorAll('.picker-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                const targetPanel = tab.dataset.tab;
+                selector.querySelector('.picker-personas-panel').style.display = targetPanel === 'personas' ? '' : 'none';
+                selector.querySelector('.picker-workflows-panel').style.display = targetPanel === 'workflows' ? '' : 'none';
+            });
+        });
+
+        const personaItems = selector.querySelectorAll('.persona-selector-item:not(.workflow-selector-item)');
+        personaItems.forEach(item => {
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const personaId = item.dataset.personaId;
                 addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, personaId, personas);
+                closePersonaSelector();
+            });
+        });
+
+        const workflowItems = selector.querySelectorAll('.workflow-selector-item');
+        workflowItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wfId = item.dataset.workflowId;
+                addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, ':' + wfId, personas);
                 closePersonaSelector();
             });
         });
@@ -572,10 +616,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function renderLogContent(text, truncateThreshold = 300) {
+        const copyBtn = '<button class="log-copy-btn" title="Copy text"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>';
         if (text.length > truncateThreshold) {
-            return `<div class="log-bubble-content truncated">${escapeHtml(text)}</div><span class="log-expand-btn">show more</span>`;
+            return `${copyBtn}<div class="log-bubble-content truncated">${escapeHtml(text)}</div><span class="log-expand-btn">show more</span>`;
         }
-        return `<div class="log-bubble-content">${escapeHtml(text)}</div>`;
+        return `${copyBtn}<div class="log-bubble-content">${escapeHtml(text)}</div>`;
     }
 
     function renderPersonaLogsHtml(logs, personaId) {
@@ -1097,6 +1142,23 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        const copyBtn = e.target.closest('.log-copy-btn');
+        if (copyBtn) {
+            e.stopPropagation();
+            const bubble = copyBtn.closest('.log-bubble');
+            const bubbleContent = bubble.querySelector('.log-bubble-content');
+            if (bubbleContent) {
+                const text = bubbleContent.textContent;
+                navigator.clipboard.writeText(text).then(() => {
+                    copyBtn.classList.add('copied');
+                    setTimeout(() => copyBtn.classList.remove('copied'), 1500);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                });
+            }
+            return;
+        }
+
         const addBtn = e.target.closest('.add-item-btn');
         if (addBtn) {
             e.stopPropagation();
@@ -1123,7 +1185,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const personaNode = e.target.closest('.persona-node');
         if (personaNode) {
-            if (currentInlineEditor && currentInlineEditor.previousElementSibling === personaNode) {
+            if (currentInlineEditor && currentInlineEditor.dataset.personaId === personaNode.dataset.personaId && currentInlineEditor.dataset.instancePath === personaNode.dataset.instancePath) {
                 closeInlinePersonaEditor();
                 return;
             }
@@ -1133,7 +1195,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const workflowNode = e.target.closest('.workflow-node');
         if (workflowNode) {
-            if (currentInlineEditor && currentInlineEditor.previousElementSibling === workflowNode) {
+            if (currentInlineEditor && currentInlineEditor.dataset.instancePath === workflowNode.dataset.instancePath && currentInlineEditor.dataset.workflowId === workflowNode.dataset.workflowId) {
                 closeInlineWorkflowEditor();
                 return;
             }
@@ -1632,9 +1694,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            const [workflowResponse, personasResponse] = await Promise.all([
+            const [workflowResponse, personasResponse, workflowsListResponse] = await Promise.all([
                 fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows/${encodeURIComponent(workflowId)}`),
-                fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas`)
+                fetch(`/api/instances/${encodeURIComponent(instancePath)}/personas`),
+                fetch(`/api/instances/${encodeURIComponent(instancePath)}/workflows`)
             ]);
 
             if (!workflowResponse.ok) throw new Error('Failed to load workflow');
@@ -1642,9 +1705,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const workflow = await workflowResponse.json();
             const personasData = await personasResponse.json();
             const personas = personasData.personas || [];
+            const workflowsData = await workflowsListResponse.json();
+            const allWorkflows = workflowsData.workflows || [];
             const levels = workflow.levels || [];
 
-            const levelsHtml = renderLevels(levels, personas);
+            const levelsHtml = renderLevels(levels, personas, allWorkflows);
 
             const scheduleHint = formatEverySecsHint(workflow.every_secs || 0);
 
@@ -1760,6 +1825,7 @@ document.addEventListener('DOMContentLoaded', function() {
             currentInlineEditor = workflowNode.nextElementSibling;
             currentInlineEditor.dataset.instancePath = instancePath;
             currentInlineEditor.dataset.workflowId = workflowId;
+            currentInlineEditor._allWorkflows = allWorkflows;
 
             currentInlineEditor.addEventListener('click', (e) => e.stopPropagation());
             currentInlineEditor.addEventListener('focusin', (e) => e.stopPropagation());
@@ -1838,7 +1904,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             });
 
-            setupWorkflowDragDrop(currentInlineEditor, instancePath, workflowId, personas);
+            setupWorkflowDragDrop(currentInlineEditor, instancePath, workflowId, personas, allWorkflows);
 
             const workflowDeleteBtn = currentInlineEditor.querySelector('[data-action="delete-workflow"]');
             if (workflowDeleteBtn) {
@@ -1908,18 +1974,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function renderLevels(levels, personas) {
+    function renderLevels(levels, personas, workflows) {
         if (levels.length === 0) {
             levels = [[]];
         }
         
         return levels.map((level, levelIndex) => {
-            const slotsHtml = level.map((personaId, slotIndex) => {
-                const persona = personas.find(p => p.id === personaId);
-                const personaName = persona ? persona.name : personaId;
+            const slotsHtml = level.map((entryId, slotIndex) => {
+                const persona = personas.find(p => p.id === entryId);
+                let displayName = persona ? persona.name : entryId;
+                let slotClass = 'wf-slot filled';
+
+                if (!persona && entryId.startsWith(':')) {
+                    const wfId = entryId.substring(1);
+                    const wf = (workflows || []).find(w => w.id === wfId);
+                    displayName = wf ? wf.name : entryId;
+                    slotClass += ' wf-workflow-ref';
+                }
+
                 return `
-                    <div class="wf-slot filled" data-level="${levelIndex}" data-slot="${slotIndex}" data-persona-id="${personaId}">
-                        <span class="wf-slot-name">${escapeHtml(personaName)}</span>
+                    <div class="${slotClass}" data-level="${levelIndex}" data-slot="${slotIndex}" data-persona-id="${entryId}">
+                        <span class="wf-slot-name">${escapeHtml(displayName)}</span>
                         <button class="wf-slot-remove" title="Remove">×</button>
                     </div>
                 `;
@@ -1942,7 +2017,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }).join('');
     }
 
-    function setupWorkflowDragDrop(editor, instancePath, workflowId, personas) {
+    function setupWorkflowDragDrop(editor, instancePath, workflowId, personas, allWorkflows) {
         const levelsContainer = editor.querySelector('.wf-levels-container');
         
         levelsContainer.addEventListener('dragover', (e) => {
@@ -2004,7 +2079,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (placeholderSlot && !e.target.classList.contains('wf-slot-remove')) {
                 const levelIndex = parseInt(placeholderSlot.dataset.level);
                 const slotIndex = parseInt(placeholderSlot.dataset.slot);
-                openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId);
+                openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId, allWorkflows);
             }
         });
     }
@@ -2068,7 +2143,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function refreshLevelsUI(editor, levels, personas) {
         const container = editor.querySelector('.wf-levels-container');
-        container.innerHTML = renderLevels(levels, personas);
+        container.innerHTML = renderLevels(levels, personas, editor._allWorkflows || []);
     }
 
     async function saveWorkflowLevels(editor, instancePath, workflowId, levels) {

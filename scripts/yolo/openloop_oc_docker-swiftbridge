@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 IMAGE="yolo_devcontainer:swiftbridge"
 _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$_dir/_openloop_oc_docker" "$IMAGE" "$@"
+"$_dir/openloop_oc_docker-base" "$IMAGE" "$@"

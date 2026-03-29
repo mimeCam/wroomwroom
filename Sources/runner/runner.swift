@@ -96,7 +96,8 @@ private func start(
             workflowId: workflow,
             personaId: nil,
 
-            agent: "", // Persona may specify custom agent. It is possible that no 1 single agent drove the workflow.
+
+            agent: w.agent,
             msg: .init(
                 input: validAsk, output: res,
                 parents: []
@@ -169,38 +170,31 @@ private func runWorkflow(
 //    }
 
     let addSingleBottomCompletion: Bool
-    var runPersonas: [[PreparedPersona]]
+    var runPersonas: [[PreparedRunItem]]
     if preparedPersonas.isEmpty {
-        addSingleBottomCompletion = true
-
         runPersonas = []
-//        runPersonas = [
-//            [
-//                PreparedPersona(
-//                    id: UUID().uuidString,
-//                    realId: "_head_",
-//                    name: w.name, role: "",
-//                    about: "",
-//                    task: "",
-////                    folder: Paths.curDir.string,
-//                    agent: nil
-//                )
-//            ]
-//        ]
+
+        addSingleBottomCompletion = true
     } else {
         runPersonas = preparedPersonas
 
-        addSingleBottomCompletion = (preparedPersonas.last?.count ?? 0) > 1
+        let empty = (preparedPersonas.last?.count ?? 0) == 0
+        assert(!empty)
+        let moreThanOne = (preparedPersonas.last?.count ?? 0) > 1
+        addSingleBottomCompletion = moreThanOne
     }
     if addSingleBottomCompletion {
-        let bottom = PreparedPersona(
-            id: UUID().uuidString,
-            realId: "_bottom_",
-            name: w.name, role: "",
-            about: "",
-            task: "",
-            //        folder: Paths.curDir.string,
-            agent: nil
+        let bottom = PreparedRunItem(
+            id: UUID().uuidString, realId: "_bottom_",
+            name: "_bottom_",
+            persona: PreparedPersona(
+                role: "",
+                about: "",
+                task: "",
+                //        folder: Paths.curDir.string,
+                agent: nil
+            ),
+            workflow: nil
         )
         runPersonas.append(
             [bottom]
@@ -232,12 +226,13 @@ private func fetchWorkflow(by id: String) async throws -> Workflow? {
     return nil
 }
 
-private struct PersonaAndId {
+private struct LevelRunItemAndId {
     let id: String
-    let p: Persona
+    let p: Persona?
+    let w: Workflow?
 }
 
-private func fetchLevels(_ ids: [[String]]) async throws -> [[PersonaAndId]]? {
+private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]]? {
     func fetchPerson(_ id: String) async throws -> Persona? {
         let p = try await FileLoader.loadPersonById(id)
         if let p {
@@ -249,19 +244,36 @@ private func fetchLevels(_ ids: [[String]]) async throws -> [[PersonaAndId]]? {
         return nil
     }
 
-    var res: [[PersonaAndId]] = []
+    var res: [[LevelRunItemAndId]] = []
     for level in ids {
-        var levelRes: [PersonaAndId] = []
+        if level.isEmpty  {
+            continue
+        }
+
+        var levelRes: [LevelRunItemAndId] = []
 
         for id in level {
-            let p = try await fetchPerson(id)
-            guard let p else {
-                assertionFailure(); return nil
-            }
+            if id.hasPrefix(":") {
+                let w = try await FileLoader.loadWorkflowById(
+                    String(id.trimmingPrefix(":"))
+                )
+                guard let w else {
+                    throw ValidationError("Inner Workflow not found: \(id)")
+                }
 
-            levelRes.append(
-                .init(id: id, p: p)
-            )
+                levelRes.append(
+                    .init(id: id, p: nil, w: w)
+                )
+            } else {
+                let p = try await fetchPerson(id)
+                guard let p else {
+                    throw ValidationError("Person does not exist: \(id)")
+                }
+
+                levelRes.append(
+                    .init(id: id, p: p, w: nil)
+                )
+            }
         }
 
         res.append(levelRes)
@@ -337,22 +349,27 @@ private func preparePersonaFolder(
 }
 
 private func preparePersonas(
-    _ levels: [[PersonaAndId]]
-) async throws -> [[PreparedPersona]]? {
+    _ levels: [[LevelRunItemAndId]]
+) async throws -> [[PreparedRunItem]]? {
     var folders: [[String]] = []
 
-    for personas in levels {
+    for runItems in levels {
         var inner: [String] = []
 
-        for pid in personas {
-            let p = pid.p
+        for ri in runItems {
+            if let p = ri.p {
 
-            let fp = try await preparePersonaFolder(for: p, id: pid.id)
-            guard let fp else {
-                assertionFailure(); return nil
+                let fp = try await preparePersonaFolder(for: p, id: ri.id)
+                guard let fp else {
+                    assertionFailure(); return nil
+                }
+
+                inner.append(fp)
+            } else if let w = ri.w {
+                inner.append("")
+            } else {
+                fatalError()
             }
-
-            inner.append(fp)
         }
 
         folders.append(inner)
@@ -360,26 +377,45 @@ private func preparePersonas(
 
     return levels.enumerated().map { li, personasAndIds in
         personasAndIds.enumerated().map { pi, personaAndId in
-            let p = personaAndId.p
-            return PreparedPersona(
-                id: UUID().uuidString,
-                realId: personaAndId.id,
-                name: p.name,
-                role: p.role,
-                about: p.about,
-                task: p.task,
-//                folder: folders[li][pi],
-                agent: p.agent == nil ? nil : ("openloop_" + p.agent!)
-            )
+            if let p = personaAndId.p {
+                return PreparedRunItem(
+                    id: UUID().uuidString, realId: personaAndId.id,
+                    name: p.name,
+                    persona: PreparedPersona(
+                        role: p.role,
+                        about: p.about,
+                        task: p.task,
+                        //                folder: folders[li][pi],
+                        agent: p.agent == nil ? nil : ("openloop_" + p.agent!)
+                    ),
+                    workflow: nil
+                )
+            } else if let w = personaAndId.w {
+                return PreparedRunItem(
+                    id: UUID().uuidString, realId: personaAndId.id,
+                    name: w.name,
+                    persona: nil,
+                    workflow: PreparedWorkflow(
+                        agent: w.agent
+                    )
+                )
+            } else {
+                fatalError()
+            }
         }
     }
 }
 
-
-private struct PreparedPersona: Hashable, Identifiable {
+private struct PreparedRunItem: Hashable, Identifiable {
     let id: String
     let realId: String
     let name: String
+
+    let persona: PreparedPersona?
+    let workflow: PreparedWorkflow?
+}
+
+private struct PreparedPersona: Hashable {
     let role: String
     let about: String
     let task: String
@@ -387,35 +423,39 @@ private struct PreparedPersona: Hashable, Identifiable {
     let agent: String?
 }
 
+private struct PreparedWorkflow: Hashable {
+    let agent: String
+}
+
 private func runGraph(
     workflowId: String,
     workflowAgent: String,
     ask: String,
-    levels: [[PreparedPersona]],
+    levels: [[PreparedRunItem]],
     outerContext: String?
 ) async throws -> String {
     levels.forEach {
         assert($0.notEmpty)
     }
 
-    let tops: Set<PreparedPersona>
+    let tops: Set<PreparedRunItem>
     if levels.count > 1 {
         tops = Set(levels.first!)
     } else {
         tops = []
     }
 
-    let bottoms: Set<PreparedPersona> = Set(levels.last!)
+    let bottoms: Set<PreparedRunItem> = Set(levels.last!)
     assert(bottoms.count == 1)
 
     typealias P = LLMGraph.Person
 
-    let ps: [String: PreparedPersona] = levels.reduce(into: [:]) { res, ps in
+    let ps: [String: PreparedRunItem] = levels.reduce(into: [:]) { res, ps in
         ps.forEach { p in
             res[p.id] = p
         }
     }
-    @Sendable func personById(_ id: String) -> PreparedPersona {
+    @Sendable func runItemById(_ id: String) -> PreparedRunItem {
         assert(ps[id] != nil)
         return ps[id]!
     }
@@ -432,66 +472,33 @@ private func runGraph(
         if let _ = talk.to {
             fatalError("Not implemented. Should not be called in Graph.short mode. For now use `.short` mode only.")
         }
-        let fromId = talk.from.id
-        let from = personById(fromId)
+        let from = runItemById(talk.from.id)
 
-        let parents: [PreparedPersona: String] = talk.responsesFromParent.reduce(
+        let parents: [PreparedRunItem: String] = talk.responsesFromParent.reduce(
             into: [:]
         ) { res, pair in
-            res[personById(pair.key.id)] = pair.value
+            res[runItemById(pair.key.id)] = pair.value
         }
-
-
-        let prompt: String
-        let middle = """
-# Task
-\(ask)
-
-# Your job
-\(from.task)
-
-Review team reports, provide your professional analysis, and create an updated comprehensive report incorporating all inputs.
-
-FYI: Main project files are located 3 directory levels up from here.
-Current directory contains various guides that should help with the task.
-Familiarize yourself and then `cd ../../..` to the project's root folder. 
-"""
-        let bottom = """
-# Task
-\(ask)
-
-# Reports
-Use reports to help you accomplish the task correctly.
-
-FYI: Main project files are located 3 directory levels up from here.
-Current directory contains various guides that should help with the task.
-Familiarize yourself and then `cd ../../..` to the project's root folder.  
-"""
 
         let context: String?
 
         if tops.contains(from) {
             context = outerContext
-            if let outerContext, outerContext.notEmpty {
-                prompt = middle
-            } else {
-                prompt = ask
-            }
         } else if bottoms.contains(from) {
-            prompt = bottom
             context = contextFromParents(parents)
         } else {
-            prompt = middle
             context = contextFromParents(parents)
             //                # Output
             //                Tell your full response here so that your teammates can continue with the task using your input.
         }
+        let hasContext = context?.notEmpty ?? false
 
         let res: String
         let tb = TimedBenchmark()
 
-        if fromId.hasPrefix(":") {
-            let innerWorkflowId = String(fromId.trimmingPrefix(":"))
+        if from.realId.hasPrefix(":") {
+            assert(from.workflow != nil)
+            let innerWorkflowId = String(from.realId.trimmingPrefix(":"))
             //
             // This is another workflow (nested inside this workflow)
             //
@@ -501,28 +508,6 @@ Familiarize yourself and then `cd ../../..` to the project's root folder.
             )
             let success = res.notEmpty
 
-            let log = PersonaRunLog(
-                success: success,
-                took: Int(tb.intervalSinceInitialized),
-                startedAt: tb.startTime, endedAt: tb.now,
-
-                instancePath: Paths.curDir.string,
-                workflowId: workflowId,
-                personaId: innerWorkflowId,
-
-                agent: "", // Workflows are driver by agents from Personas
-                msg: .init(
-                    input: prompt, output: res,
-                    parents: parents.map { p, msg in
-                        PersonaRunLog.Message.Parent(
-                            id: p.realId, text: msg
-                        )
-                    }
-                )
-            )
-            try await FileLoader.saveRunLog(log)
-
-
             guard success else {
                 throw ValidationError("Inner workflow (\(talk.from.id)) step failed")
             }
@@ -530,21 +515,72 @@ Familiarize yourself and then `cd ../../..` to the project's root folder.
             //
             // Persona
             //
+            assert(from.persona != nil)
+
+            let coreTask: String
+            if let task = from.persona?.task, task.notEmpty {
+                coreTask = """
+Your Core task:
+\(from.persona?.task ?? "")
+
+Infer context from the parent task:
+\(ask)
+"""
+            } else {
+                coreTask = ask
+            }
+
+            let topOrMiddle = """
+# Task
+\(coreTask)
+
+\(levels.count > 1 ? "Work on your core task only and not parent task since you are working within a larger team." : "")
+\(hasContext ? "Review team reports, provide your professional analysis, and create an updated comprehensive report incorporating all inputs." : "")
+
+\(levels.count > 1 ? "Explain your findings here directly, without saving to file(s)." : "")
+
+FYI: Main project files are located 1 directory level up from here.
+Current directory is read-only and contains various guides that should help with the task.
+Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a task.
+"""
+
+
+            let chdirNote: String
+            let fakeBottom = from.realId == "_bottom_"
+            if fakeBottom {
+                chdirNote = ""
+            } else {
+                chdirNote = """
+FYI: Main project files are located 1 directory level up from here.
+Current directory is read-only and contains various guides that should help with the task.
+Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a task.
+"""
+            }
+
+            let bottom = """
+# Task
+\(coreTask)
+
+\(hasContext ? "# Reports\nUse reports to help you accomplish the task correctly." : "")
+
+\(chdirNote)
+"""
 
             let mode: String?
+            let prompt: String
 
-            if tops.contains(from) {
-                mode = "plan"
-            } else if bottoms.contains(from) {
+            if bottoms.contains(from) {
+                prompt = bottom
                 mode = nil // "auto" // "build"
             } else {
+                prompt = topOrMiddle
                 mode = "plan"
             }
 
-            let systemPrompt = from.about
+            let systemPrompt = from.persona?.about ?? ""
 
             let agent: String
-            if let pa = from.agent, pa.notEmpty,
+            if let pa = from.persona?.agent, pa.notEmpty,
                PathIO.isFileExistent(atPath: Paths.bin.appending(pa).string) {
                 agent = pa
             } else {
@@ -603,22 +639,31 @@ Familiarize yourself and then `cd ../../..` to the project's root folder.
 
 
 
-private func contextFromParents(_ all: [PreparedPersona: String]) -> String? {
+private func contextFromParents(_ all: [PreparedRunItem: String]) -> String? {
     all.reduce(into: "") { res, pair in
-        let p = pair.key
+        let item = pair.key
 
-        if p.name.notEmpty, p.role.notEmpty {
-        res += """
-## Report from \(p.name), \(p.role):
+        if let p = item.persona {
+            if item.name.notEmpty, p.role.notEmpty {
+                res += """
+## Report from \(item.name), \(p.role):
 \(pair.value)
 
 """
-        } else {
+            } else {
+                res += """
+## Report by \(p.role):
+\(pair.value)
+
+"""
+            }
+        } else if let _ = item.workflow {
             res += """
 ## Report:
 \(pair.value)
-
 """
+        } else {
+            fatalError()
         }
     }
 }
