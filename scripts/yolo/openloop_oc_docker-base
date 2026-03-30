@@ -130,6 +130,9 @@ if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
     VOLUME_MOUNTS+=(-v "$HOME/Library/Developer/Xcode/DerivedData:$HOME/Library/Developer/Xcode/DerivedData:ro")
 fi
 
+[ -f "$HOME/.gitignore" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitignore:/home/node/.gitignore:ro")
+[ -f "$HOME/.gitconfig" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitconfig:/home/node/.gitconfig:ro")
+
 if [ "${MODE}" == "plan" ]; then
     VOLUME_MOUNTS+=(-v "$ROOT:$ROOT:ro")
 else
