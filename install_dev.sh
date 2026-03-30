@@ -98,6 +98,15 @@ pkill openloop-api || true
 (cd ~/.local/bin && ./openloop-api serve --port 54321 > /dev/null 2>&1 &)
 
 
+echo "Adding ~/.local/bin to your PATH. Run 'w2' (or 'openloop') in terminal from inside project's folder to setup openloop for it."
+for f in ~/.bashrc ~/.zshrc; do
+  if [[ -f "$f" ]]; then
+    grep -q '\.local/bin' "$f" || echo '[[ -d "$HOME/.local/bin" && ! ":$PATH:" == *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"' >> "$f"
+  fi
+done
+[[ -d "$HOME/.local/bin" && ! ":$PATH:" == *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
+
+
 echo "Checking cc_docker:"
 openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
 echo "Checking oc_docker:"
@@ -114,4 +123,3 @@ fi
 
 echo "U r doing God's work 🪽"
 echo "Installation complete. Cha-ching!"
-echo "Last part: Add ~/.local/bin to your PATH, then run 'w2' from the project's folder"
