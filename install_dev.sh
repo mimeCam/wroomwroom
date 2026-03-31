@@ -103,6 +103,9 @@ verify_and_install_swift
 cp -r Sources/api/Public ~/.local/bin
 pkill openloop-api || true
 sleep 1
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    mkdir -p ~/.config/systemd/user
+fi
 if ! pgrep -x openloop-api > /dev/null 2>&1; then
     (cd ~/.local/bin && ./openloop-api serve --port 54321 --hostname 0.0.0.0 > /dev/null 2>&1 &)
 fi

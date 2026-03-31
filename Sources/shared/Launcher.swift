@@ -242,7 +242,10 @@ private extension Launcher {
         stdout: String,
         stderr: String
     ) async throws {
-        let dest = systemdUserDir()
+        let dir = systemdUserDir()
+        _ = PathIO.createDirectoryIfNotExists(atPath: dir.string)
+
+        let dest = dir
             .appending(serviceName + ".service")
 
         guard !PathIO.isFileExistent(atPath: dest.string) else {
