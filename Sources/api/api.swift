@@ -5,9 +5,10 @@ import SystemPackage
 @main
 struct api {
     static func main() async throws {
-        #if os(macOS)
-        try await registerLaunchAgent()
-        #endif
+        try await Launcher.registerAPI(
+            binaryPath: Paths.bin.appending("openloop-api"),
+            port: 54321
+        )
 
         var env = try Environment.detect()
         try LoggingSystem.bootstrap(from: &env)
@@ -26,58 +27,6 @@ struct api {
         try await app.asyncShutdown()
     }
 }
-
-#if os(macOS)
-private func registerLaunchAgent() async throws {
-    let contents = """
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>openloop.api</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>\(Paths.bin.appending("openloop-api"))</string>
-        <string>serve</string>
-        <string>--port</string>
-        <string>54321</string>
-    </array>
-
-    <key>WorkingDirectory</key>
-    <string>\(Paths.curDir.string)</string>
-
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>\(Paths.share.appending("openloop").appending("api-stdout.log"))</string>
-    <key>StandardErrorPath</key>
-    <string>\(Paths.share.appending("openloop").appending("api-stderr.log"))</string>
-</dict>
-</plist>
-"""
-
-    let dest = FilePath(NSHomeDirectory())
-        .appending("Library").appending("LaunchAgents")
-        .appending("openloop.api.plist")
-    if PathIO.isFileExistent(atPath: dest.string) {
-        return
-    }
-
-    guard let data = contents.data(using: .utf8) else {
-        assertionFailure()
-        return
-    }
-    guard await File(dest.string).write(data) else {
-        assertionFailure()
-        return
-    }
-}
-#endif
 
 func configure(_ app: Application) async throws {
     app.routes.defaultMaxBodySize = "2mb"

@@ -46,73 +46,10 @@ struct openloop: ParsableCommand {
 private func prepare() async throws {
     prepareFolders()
 
-    #if os(macOS)
-    try await registerLaunchAgent()
-    #endif
-}
-
-#if os(macOS)
-private func registerLaunchAgent() async throws {
-    guard let md5 = Paths.curDir.string.md5 else {
-        assertionFailure(); return
-    }
-
-    let contents = """
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>\(Naming.instanceWorkerLabel(for: Paths.curDir.string))</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>\(Paths.bin.appending("openloop"))</string>
-    </array>
-
-    <key>WorkingDirectory</key>
-    <string>\(Paths.curDir.string)</string>
-
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>\(Paths.curDir.appending("openloop").appending("openloop-stdout.log"))</string>
-    <key>StandardErrorPath</key>
-    <string>\(Paths.curDir.appending("openloop").appending("openloop-stderr.log"))</string>
-</dict>
-</plist>
-"""
-
-    let dest = FilePath(NSHomeDirectory())
-        .appending("Library").appending("LaunchAgents")
-        .appending(Naming.instanceWorkerLabel(for: Paths.curDir.string) + ".plist")
-
-    try await writeFileIfNotExistent(dest) {
-        guard let data = contents.data(using: .utf8) else {
-            fatalError()
-        }
-
-        return data
-    }
-}
-#endif
-
-/// Use with delayed data loading like so: ```writeFileIfNotExistent(fileName) { actuallyLoadData() }
-private func writeFileIfNotExistent(
-    _ dest: FilePath,
-    contents: () async throws -> Data
-) async throws {
-    if PathIO.isFileExistent(atPath: dest.string) {
-        return
-    }
-
-    let data = try await contents()
-    guard await File(dest.string).write(data) else {
-        throw ValidationError("Failed to write data to a file. \(#function)")
-    }
+    try await Launcher.registerWorker(
+        workingDirectory: Paths.curDir,
+        binaryPath: Paths.bin.appending("openloop")
+    )
 }
 
 private func prepareFolders() {

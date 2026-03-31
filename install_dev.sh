@@ -13,6 +13,13 @@ fi
 
 cd "$(dirname "$0")"
 
+if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
+    echo "Error: Running as root or under /root/ is not supported." >&2
+    echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2
+    echo "Run as a different (non-root) user." >&2
+    exit 1
+fi
+
 verify_available() {
     local cmd=$1
     if ! command -v "$cmd" &> /dev/null; then
@@ -95,7 +102,10 @@ verify_and_install_swift
 # rm -rf ~/.local/bin/Public
 cp -r Sources/api/Public ~/.local/bin
 pkill openloop-api || true
-(cd ~/.local/bin && ./openloop-api serve --port 54321 > /dev/null 2>&1 &)
+sleep 1
+if ! pgrep -x openloop-api > /dev/null 2>&1; then
+    (cd ~/.local/bin && ./openloop-api serve --port 54321 --hostname 0.0.0.0 > /dev/null 2>&1 &)
+fi
 
 
 echo "Adding ~/.local/bin to your PATH. Run 'w2' (or 'openloop') in terminal from inside project's folder to setup openloop for it."
@@ -107,13 +117,22 @@ done
 [[ -d "$HOME/.local/bin" && ! ":$PATH:" == *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
 
 
-echo "Checking cc_docker:"
-openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
-echo "Checking oc_docker:"
-openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparrow ey" "plan"
-
 echo ""
 echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the project's folder . Control Plane available at http://localhost:54321/"
+echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
+
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    loginctl enable-linger "$(whoami)" 2>/dev/null || true
+    #
+    # >   systemctl --user list-units --type=service
+    # Or to see all user service unit files (including inactive/enabled):
+    # >   systemctl --user list-unit-files --type=service
+fi
+
+echo "Checking oc_docker:"
+openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparrow ey" "plan"
+# echo "Checking cc_docker:"
+# openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open http://localhost:54321/ || true
