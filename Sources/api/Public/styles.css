@@ -1037,6 +1037,12 @@ body {
     top: 42px;
 }
 
+.persona-agent-presets {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
 .persona-editor-inline {
     margin-left: 56px;
     padding: 18px;
@@ -1232,6 +1238,13 @@ body {
     border-color: var(--accent-primary);
     background: var(--bg-secondary);
     box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.wf-agent-presets {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    padding-left: 46px;
 }
 
 .wf-subtitle {

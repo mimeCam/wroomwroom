@@ -1455,7 +1455,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="persona-field">
                         <label>Agent</label>
-                        <input type="text" class="persona-input" data-field="agent" placeholder="cc_docker" value="${escapeHtml(persona.agent || '')}">
+                        <input type="text" class="persona-input" data-field="agent" placeholder="Can be empty" value="${escapeHtml(persona.agent || '')}">
+                        <div class="persona-agent-presets">
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker">cc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker-swift">cc_docker-swift</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker">oc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker-swift">oc_docker-swift</button>
+                        </div>
                     </div>
                     <div class="persona-field">
                         <label>About</label>
@@ -1578,6 +1584,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (e.target.value !== e.target.defaultValue) {
                         saveInlinePersonaField(currentInlineEditor, e.target.dataset.field, e.target.value);
                         e.target.defaultValue = e.target.value;
+                    }
+                });
+            });
+
+            currentInlineEditor.querySelectorAll('.agent-preset-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const agent = btn.dataset.agent;
+                    const input = currentInlineEditor.querySelector('[data-field="agent"]');
+                    if (input) {
+                        input.value = agent;
+                        if (agent !== input.defaultValue) {
+                            saveInlinePersonaField(currentInlineEditor, 'agent', agent);
+                            input.defaultValue = agent;
+                        }
                     }
                 });
             });
@@ -1778,7 +1799,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text" class="wf-desc-input" data-field="desc" value="${escapeHtml(workflow.desc || '')}" placeholder="Description (optional)">
                         <div class="wf-agent-field">
                             <label>Agent</label>
-                            <input type="text" class="wf-agent-input" data-field="agent" value="${escapeHtml(workflow.agent || '')}" placeholder="Agent identifier (optional)">
+                            <input type="text" class="wf-agent-input" data-field="agent" value="${escapeHtml(workflow.agent || 'oc_docker')}" placeholder="oc_docker">
+                        </div>
+                        <div class="wf-agent-presets">
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker">cc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker-swift">cc_docker-swift</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker">oc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker-swift">oc_docker-swift</button>
                         </div>
                         <span class="wf-subtitle">Workflow Levels <span class="wf-hint">(drag personas from the left or click +)</span></span>
                     </div>
@@ -1870,6 +1897,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
+            currentInlineEditor.querySelectorAll('.agent-preset-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const agent = btn.dataset.agent;
+                    const input = currentInlineEditor.querySelector('[data-field="agent"]');
+                    if (input) {
+                        input.value = agent;
+                        if (agent !== input.defaultValue) {
+                            saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'agent', agent);
+                            input.defaultValue = agent;
+                        }
+                    }
+                });
+            });
+
             const everySecsInput = currentInlineEditor.querySelector('[data-field="every_secs"]');
             if (everySecsInput) {
                 everySecsInput.addEventListener('input', (e) => {
@@ -1887,7 +1929,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
-            currentInlineEditor.querySelectorAll('.preset-btn').forEach(btn => {
+            currentInlineEditor.querySelectorAll('.preset-btn[data-secs]').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const secs = btn.dataset.secs;
@@ -2260,7 +2302,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="persona-field">
                         <label>Agent</label>
-                        <input type="text" class="persona-input creator-field" data-field="agent" placeholder="cc_docker">
+                        <input type="text" class="persona-input creator-field" data-field="agent" placeholder="Can be empty">
+                        <div class="persona-agent-presets">
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker">cc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker-swift">cc_docker-swift</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker">oc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker-swift">oc_docker-swift</button>
+                        </div>
                     </div>
                     <div class="persona-field">
                         <label>About</label>
@@ -2289,6 +2337,17 @@ document.addEventListener('DOMContentLoaded', function() {
             idInput.focus();
             idInput.select();
         }
+
+        currentInlineEditor.querySelectorAll('.agent-preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const agent = btn.dataset.agent;
+                const input = currentInlineEditor.querySelector('[data-field="agent"]');
+                if (input) {
+                    input.value = agent;
+                }
+            });
+        });
 
         currentInlineEditor.querySelector('.creator-cancel-btn').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2332,7 +2391,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="persona-field">
                         <label>Agent</label>
-                        <input type="text" class="persona-input creator-field" data-field="agent" placeholder="Agent identifier (optional)">
+                        <input type="text" class="persona-input creator-field" data-field="agent" value="oc_docker" placeholder="oc_docker">
+                        <div class="persona-agent-presets">
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker">cc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="cc_docker-swift">cc_docker-swift</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker">oc_docker</button>
+                            <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker-swift">oc_docker-swift</button>
+                        </div>
                     </div>
                     <div class="wf-schedule-field">
                         <label>Repeat every</label>
@@ -2378,7 +2443,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
-        currentInlineEditor.querySelectorAll('.preset-btn').forEach(btn => {
+        currentInlineEditor.querySelectorAll('.preset-btn[data-secs]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const secs = btn.dataset.secs;
@@ -2386,6 +2451,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (input) {
                     input.value = secs;
                     input.dispatchEvent(new Event('input'));
+                }
+            });
+        });
+
+        currentInlineEditor.querySelectorAll('.agent-preset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const agent = btn.dataset.agent;
+                const input = currentInlineEditor.querySelector('[data-field="agent"]');
+                if (input) {
+                    input.value = agent;
                 }
             });
         });
