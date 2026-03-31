@@ -17,6 +17,13 @@ if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
     echo "Error: Running as root or under /root/ is not supported." >&2
     echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2
     echo "Run as a different (non-root) user." >&2
+    echo ""
+    echo "To create new user with 'node' username (different is OK):"
+    echo "useradd -m -s /bin/bash node"
+    echo "usermod -aG docker node"
+    echo "passwd node"
+    echo "su - node"
+
     exit 1
 fi
 
@@ -121,6 +128,12 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     fi
 
     mkdir -p ~/.config/systemd/user
+
+    echo "Enabled openloop to auto-start after reboot"
+    echo "See enabled services:"
+    echo "systemctl --user list-units --type=service"
+    echo "Or to see all user service unit files (including inactive/enabled):"
+    echo "systemctl --user list-unit-files --type=service"
 fi
 
 # rm -rf ~/.local/bin/Public
@@ -144,12 +157,6 @@ done
 echo ""
 echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the project's folder . Control Plane available at http://localhost:54321/"
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
-
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "Enabled openloop to auto-start after reboot"
-    echo "See enabled services:"
-    echo "systemctl --user list-units --type=service"
-fi
 
 echo "Checking oc_docker:"
 openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparrow ey" "plan"
