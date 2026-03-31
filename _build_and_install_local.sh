@@ -63,6 +63,29 @@ fi
 mkdir -p "$HOME/.local/bin"
 cp scripts/yolo/* "$HOME/.local/bin/"
 
+# Rewritting `docker` to full path to docker binary. openloop-api/runner are launched by LaunchAgent on mac that sets minimal PATH. `whereis` also fails when running with minimal PATH.
+DOCKER=""
+for candidate in /usr/bin/docker /usr/local/bin/docker /opt/homebrew/bin/docker; do
+    if [ -x "$candidate" ]; then
+        DOCKER="$candidate"
+        break
+    fi
+done
+if [ -z "$DOCKER" ]; then
+    DOCKER=$(command -v docker 2>/dev/null || true)
+fi
+if [ -n "$DOCKER" ]; then
+    for f in "$HOME/.local/bin/"*-base; do
+        if [ -f "$f" ]; then
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s|\$DOCKER|$DOCKER|g" "$f"
+            else
+                sed -i "s|\$DOCKER|$DOCKER|g" "$f"
+            fi
+        fi
+    done
+fi
+
 main "openloop"
 main "runner" "openloop-runner"
 main "api" "openloop-api"

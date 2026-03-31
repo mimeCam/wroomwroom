@@ -9,6 +9,7 @@
 # Supports stdin streaming
 #
 
+# this is noop. _build_and_install_local rewrites `$DOCKER`.
 DOCKER=$(whereis docker | awk '{print $2}') # if simply `docker` then this script fails to start docker when launched by openloop-runner.
 
 IMAGE="$1"
