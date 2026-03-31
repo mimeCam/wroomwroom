@@ -248,34 +248,32 @@ private extension Launcher {
         let dest = dir
             .appending(serviceName + ".service")
 
-        guard !PathIO.isFileExistent(atPath: dest.string) else {
-            return
-        }
+        if !PathIO.isFileExistent(atPath: dest.string) {
+            let contents = """
+            [Unit]
+            Description=\(serviceName)
 
-        let contents = """
-        [Unit]
-        Description=\(serviceName)
+            [Service]
+            Type=simple
+            ExecStart=\(execStart)
+            WorkingDirectory=\(workingDirectory)
+            Restart=always
+            RestartSec=5
+            StandardOutput=file:\(stdout)
+            StandardError=file:\(stderr)
 
-        [Service]
-        Type=simple
-        ExecStart=\(execStart)
-        WorkingDirectory=\(workingDirectory)
-        Restart=always
-        RestartSec=5
-        StandardOutput=file:\(stdout)
-        StandardError=file:\(stderr)
+            [Install]
+            WantedBy=default.target
+            """
 
-        [Install]
-        WantedBy=default.target
-        """
-
-        guard let data = contents.data(using: .utf8) else {
-            assertionFailure()
-            return
-        }
-        guard await File(dest.string).write(data) else {
-            assertionFailure()
-            return
+            guard let data = contents.data(using: .utf8) else {
+                assertionFailure()
+                return
+            }
+            guard await File(dest.string).write(data) else {
+                assertionFailure()
+                return
+            }
         }
 
         _ = try? await exec(
