@@ -9,6 +9,8 @@
 # Supports stdin streaming
 #
 
+DOCKER=$(whereis docker | awk '{print $2}') # if simply `docker` then this script fails to start docker when launched by openloop-runner.
+
 IMAGE="$1"
 
 shift
@@ -177,7 +179,7 @@ if [ -p /dev/stdin ]; then
     #./openloop_cc_docker "hi, what is my name?
     #
     if [ "$use_tier" = true ]; then
-        cat | /usr/local/bin/docker run --rm -i \
+        cat | $DOCKER run --rm -i \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -190,7 +192,7 @@ if [ -p /dev/stdin ]; then
             -w "$PRJ" \
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
-        cat | /usr/local/bin/docker run --rm -i \
+        cat | $DOCKER run --rm -i \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
@@ -205,7 +207,7 @@ if [ -p /dev/stdin ]; then
     fi
 else
     if [ "$use_tier" = true ]; then
-        /usr/local/bin/docker run --rm \
+        $DOCKER run --rm \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -218,7 +220,7 @@ else
             -w "$PRJ" \
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
-        /usr/local/bin/docker run --rm \
+        $DOCKER run --rm \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \

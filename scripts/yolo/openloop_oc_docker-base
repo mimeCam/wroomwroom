@@ -9,6 +9,8 @@
 # Supports stdin streaming
 #
 
+DOCKER=$(whereis docker | awk '{print $2}') # if simply `docker` then this script fails to start docker when launched by openloop-runner.
+
 IMAGE="$1"
 
 shift
@@ -185,11 +187,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 EOF
 fi
 
-# echo "VOLUME_MOUNTS: ${VOLUME_MOUNTS[@]}"
-# exit 1
-
-# docker run --rm \ # runner fails to start when it is like this on mac.
-/usr/local/bin/docker run --rm \
+$DOCKER run --rm \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$AUTH_FILE:/home/node/.local/share/opencode/auth.json" \
     -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \
