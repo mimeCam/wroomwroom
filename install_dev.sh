@@ -123,8 +123,21 @@ echo "You may need to setup auth for AI agents (opencode, claude-code). See http
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     loginctl enable-linger "$(whoami)" 2>/dev/null || true
-    #
-    # >   systemctl --user list-units --type=service
+
+    if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+        export XDG_RUNTIME_DIR=/run/user/$(id -u)
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+
+        for f in ~/.bashrc ~/.zshrc; do
+            if [[ -f "$f" ]]; then
+                grep -q 'XDG_RUNTIME_DIR' "$f" || echo '[[ -z "$XDG_RUNTIME_DIR" ]] && export XDG_RUNTIME_DIR=/run/user/$(id -u) && export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"' >> "$f"
+            fi
+        done
+    fi
+
+    echo "Enabled openloop to auto-start after reboot"
+    echo "See enabled services:"
+    echo "systemctl --user list-units --type=service"
     # Or to see all user service unit files (including inactive/enabled):
     # >   systemctl --user list-unit-files --type=service
 fi
@@ -137,8 +150,7 @@ openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparr
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open http://localhost:54321/ || true
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    xdg-open http://localhost:54321/ || true
+    command -v xdg-open > /dev/null 2>&1 && xdg-open http://localhost:54321/ || true
 fi
 
-echo "U r doing God's work 🪽"
-echo "Installation complete. Cha-ching!"
+echo "Cha-ching! 🪽 Installation complete 🪽. See http://localhost:54321/"
