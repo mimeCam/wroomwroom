@@ -170,6 +170,21 @@ func configure(_ app: Application) async throws {
         try await WorkflowHandler().delete(req: req)
     }
 
+    // Knowledge file endpoints
+    let knowledgeBase = instances.grouped(":id", "personas", ":pid", "knowledge")
+    knowledgeBase.get { req async throws in
+        try await KnowledgeHandler().listFiles(req: req)
+    }
+    knowledgeBase.get("**") { req async throws in
+        try await KnowledgeHandler().readFile(req: req)
+    }
+    knowledgeBase.put("**") { req async throws in
+        try await KnowledgeHandler().writeFile(req: req)
+    }
+    knowledgeBase.delete("**") { req async throws in
+        try await KnowledgeHandler().deleteFile(req: req)
+    }
+
     // Manual workflows endpoints
     instances.grouped(":id", "manual-workflows").get { req async throws in
         try await ManualWorkflowHandler().getAll(req: req)

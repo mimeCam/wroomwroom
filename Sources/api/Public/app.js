@@ -181,6 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <span class="stat-success" title="Success">${stat.success}</span>
                             <span class="stat-total">/ ${stat.total}</span>
                         </div>
+                        <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(instance.fullPath || '')}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
                         <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
                     </div>
                 `}).join('')
@@ -784,6 +785,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <span class="stat-success" title="Success">${stat.success}</span>
                             <span class="stat-total">/ ${stat.total}</span>
                         </div>
+                        <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(path)}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
                         <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
                     </div>
                 `}).join('')
@@ -968,10 +970,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span class="stat-success" title="Success">${stat.success}</span>
                         <span class="stat-total">/ ${stat.total}</span>
                     </div>
+                    <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(path)}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
                     <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
                 </div>
             `}).join('')
-            : '<div class="subview-empty">No personas</div>';
+        : '<div class="subview-empty">No personas</div>';
 
         const workflowsHtml = workflows.length > 0
             ? workflows.map(w => `
@@ -1180,6 +1183,16 @@ document.addEventListener('DOMContentLoaded', function() {
             const workflowName = launchBtn.dataset.workflowName;
             const workflowAsk = launchBtn.dataset.workflowAsk || '';
             openManualWorkflowLauncher(instancePath, workflowId, workflowName, workflowAsk, launchBtn);
+            return;
+        }
+
+        const knowledgeBtn = e.target.closest('.persona-knowledge-btn');
+        if (knowledgeBtn) {
+            e.stopPropagation();
+            const instPath = knowledgeBtn.dataset.instancePath;
+            const pid = knowledgeBtn.dataset.personaId;
+            const pname = knowledgeBtn.dataset.personaName || pid;
+            window.open('files.html?instance=' + encodeURIComponent(instPath) + '&persona=' + encodeURIComponent(pid) + '&name=' + encodeURIComponent(pname), '_blank');
             return;
         }
 

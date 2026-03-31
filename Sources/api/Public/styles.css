@@ -1740,6 +1740,28 @@ body {
     padding: 2px 4px;
 }
 
+.persona-knowledge-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 44px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+}
+
+.persona-knowledge-btn:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
 .persona-logs-btn {
     position: absolute;
     bottom: 8px;
@@ -2006,7 +2028,8 @@ body {
 }
 
 .persona-list.editing .persona-stats,
-.persona-list.editing .persona-logs-btn {
+.persona-list.editing .persona-logs-btn,
+.persona-list.editing .persona-knowledge-btn {
     display: none;
 }
 
