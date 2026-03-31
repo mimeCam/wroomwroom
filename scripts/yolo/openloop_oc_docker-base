@@ -189,6 +189,8 @@ EOF
 fi
 
 $DOCKER run --rm \
+    --pids-limit=500 \
+    --init \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$AUTH_FILE:/home/node/.local/share/opencode/auth.json" \
     -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \

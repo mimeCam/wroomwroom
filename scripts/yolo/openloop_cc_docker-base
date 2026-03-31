@@ -82,6 +82,14 @@ if [ "$use_tier" = false ]; then
     fi
 fi
 
+mkdir -p "$HOME/.claude"
+if [ ! -f "$HOME/.claude.json" ]; then
+    echo '{}' > "$HOME/.claude.json"
+fi
+if [ ! -f "$HOME/.claude.json.backup" ]; then
+    echo '{}' > "$HOME/.claude.json.backup"
+fi
+
 if [ "$use_tier" = true ]; then
     #
     # Checking your claude usage:
@@ -181,6 +189,8 @@ if [ -p /dev/stdin ]; then
     #
     if [ "$use_tier" = true ]; then
         cat | $DOCKER run --rm -i \
+            --pids-limit=500 \
+            --init \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -194,6 +204,8 @@ if [ -p /dev/stdin ]; then
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
         cat | $DOCKER run --rm -i \
+            --pids-limit=500 \
+            --init \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
@@ -209,6 +221,8 @@ if [ -p /dev/stdin ]; then
 else
     if [ "$use_tier" = true ]; then
         $DOCKER run --rm \
+            --pids-limit=500 \
+            --init \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -222,6 +236,8 @@ else
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
         $DOCKER run --rm \
+            --pids-limit=500 \
+            --init \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
