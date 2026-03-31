@@ -13,6 +13,8 @@ struct openloop: ParsableCommand {
             do {
                 try await prepare()
 
+                if try await detectDuplicateInstance() { return }
+
                 let success = try? await exec(
                     "/usr/bin/open",
                     args: ["http://localhost:54321"]
@@ -30,8 +32,7 @@ struct openloop: ParsableCommand {
                     try await loop()
 
                     try await Task.sleep(
-                        nanoseconds: 60_000_000_000 // 1m
-                        //                    nanoseconds: 10_000_000_000 // 10s
+                        nanoseconds: loopIntervalSecs * 1_000_000_000
                     )
                 }
             } catch {
@@ -99,7 +100,53 @@ private func prepareFolders() {
     assert(created23)
 }
 
+private let loopIntervalSecs: UInt64 = 60
+
+private func detectDuplicateInstance() async throws -> Bool {
+    guard let existing = try await FileLoader.loadInstanceState(at: Paths.curDir.string) else {
+        return false
+    }
+
+    let elapsed = Date().timeIntervalSinceReferenceDate - existing.lastLoopAt
+    guard elapsed < Double(loopIntervalSecs + 10) else {
+        return false
+    }
+
+    let tsBefore = existing.lastLoopAt
+
+    try await Task.sleep(nanoseconds: (loopIntervalSecs + 10) * 1_000_000_000)
+
+    guard let recheck = try await FileLoader.loadInstanceState(at: Paths.curDir.string) else {
+        return false
+    }
+
+    if recheck.lastLoopAt != tsBefore {
+        print("Another openloop instance is active (pid \(recheck.pid)). Exiting.")
+        return true
+    }
+
+    return false
+}
+
+private func checkDuplicateInLoop() async throws -> Bool {
+    guard let existing = try await FileLoader.loadInstanceState(at: Paths.curDir.string) else {
+        return false
+    }
+
+    let myPid = ProcessInfo.processInfo.processIdentifier
+    let elapsed = Date().timeIntervalSinceReferenceDate - existing.lastLoopAt
+
+    if existing.pid != Int(myPid) && elapsed < Double(loopIntervalSecs + 10) {
+        print("Another openloop instance is active (pid \(existing.pid)). Exiting.")
+        return true
+    }
+
+    return false
+}
+
 private func loop() async throws {
+    if try await checkDuplicateInLoop() { Foundation.exit(0) }
+
     let all = try await readWorkflows()
 
     if all.isEmpty {
@@ -141,7 +188,8 @@ private func loop() async throws {
         InstanceState(
             lastLoopAt: Date().timeIntervalSinceReferenceDate,
             activeRunningWorkflows: await state.countRunnint(),
-            inactiveWorkflows: skipped
+            inactiveWorkflows: skipped,
+            pid: Int(ProcessInfo.processInfo.processIdentifier)
         )
     )
 }

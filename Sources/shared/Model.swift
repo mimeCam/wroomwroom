@@ -8,15 +8,18 @@ public struct InstanceState: Codable {
     public let lastLoopAt: Double
     public let activeRunningWorkflows: Int
     public let inactiveWorkflows: Int
+    public let pid: Int
 
     public init(
         lastLoopAt: Double,
         activeRunningWorkflows: Int,
-        inactiveWorkflows: Int
+        inactiveWorkflows: Int,
+        pid: Int
     ) {
         self.lastLoopAt = lastLoopAt
         self.activeRunningWorkflows = activeRunningWorkflows
         self.inactiveWorkflows = inactiveWorkflows
+        self.pid = pid
     }
 
 }

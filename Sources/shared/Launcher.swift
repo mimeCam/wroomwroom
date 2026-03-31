@@ -257,7 +257,7 @@ private extension Launcher {
             Type=simple
             ExecStart=\(execStart)
             WorkingDirectory=\(workingDirectory)
-            Restart=always
+            Restart=on-failure
             RestartSec=5
             StandardOutput=file:\(stdout)
             StandardError=file:\(stderr)
