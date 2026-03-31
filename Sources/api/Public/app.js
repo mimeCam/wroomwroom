@@ -162,69 +162,9 @@ document.addEventListener('DOMContentLoaded', function() {
         workflowCountHtml = getWorkflowCountHtml(instance.fullPath, instance.state);
 
         if (instance.expanded) {
-            const personasHtml = instance.personas.length > 0
-                ? instance.personas.map(p => {
-                    const stat = getPersonaStats(instance.fullPath, p.id);
-                    return `
-                    <div class="persona-node"
-                         role="treeitem"
-                         draggable="true"
-                         data-instance-path="${escapeHtml(instance.fullPath || '')}"
-                         data-persona-id="${escapeHtml(p.id)}"
-                         data-persona-name="${escapeHtml(p.name)}">
-                        <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
-                        ${getAvatarHtml(p.avatar)}
-                        <span class="persona-label">${escapeHtml(p.name)}</span>
-                        <span class="persona-role">${escapeHtml(p.role || '')}</span>
-                        <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
-                            <span class="stat-errors" title="Errors">${stat.errors}</span>
-                            <span class="stat-success" title="Success">${stat.success}</span>
-                            <span class="stat-total">/ ${stat.total}</span>
-                        </div>
-                        <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(instance.fullPath || '')}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
-                        <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
-                    </div>
-                `}).join('')
-                : '<div class="subview-empty">No personas</div>';
-
-            const workflowsHtml = instance.workflows.length > 0
-                ? instance.workflows.map(w => `
-                    <div class="workflow-node"
-                         data-instance-path="${escapeHtml(instance.fullPath || '')}"
-                         data-workflow-id="${escapeHtml(w.id)}">
-                        <span class="workflow-icon">○</span>
-                        <div class="workflow-content">
-                            <div class="workflow-id-row">
-                                <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
-                            </div>
-                            <span class="workflow-label">${escapeHtml(w.name)}</span>
-                            <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
-                            <button class="workflow-launch-btn" data-instance-path="${escapeHtml(instance.fullPath)}" data-workflow-id="${escapeHtml(w.id)}" data-workflow-name="${escapeHtml(w.name)}" data-workflow-ask="${escapeHtml(w.ask || '')}" title="Launch workflow manually">▶ Launch</button>
-                        </div>
-                    </div>
-                `).join('')
-                : '<div class="subview-empty">No workflows</div>';
-
-            expandedContentHtml = `
-                <div class="expanded-content">
-                    <div class="subview personas-column">
-                        <div class="subview-header">Personas</div>
-                        <div class="persona-list">${personasHtml}</div>
-                        <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(instance.fullPath)}">+ Add Persona</button>
-                    </div>
-                    <div class="subview workflows-column">
-                        <div class="subview-header">Workflows</div>
-                        <div class="workflow-list">${workflowsHtml}</div>
-                        <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(instance.fullPath)}">+ Add Workflow</button>
-                        <div class="manual-workflows-section">
-                            <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(instance.fullPath)}">Refresh</button></div>
-                            <div class="manual-workflows-list" data-instance-path="${escapeHtml(instance.fullPath)}">
-                                <div class="loading-manual-workflows">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const personasHtml = renderPersonasHtml(instance.personas, instance.fullPath);
+            const workflowsHtml = renderWorkflowsHtml(instance.workflows, instance.fullPath);
+            expandedContentHtml = renderExpandedContentHtml(instance.fullPath, personasHtml, workflowsHtml);
         }
 
         return `
@@ -766,72 +706,11 @@ document.addEventListener('DOMContentLoaded', function() {
             instancePersonas[path] = personas;
             instanceWorkflows[path] = workflows;
 
-            const personasHtml = personas.length > 0
-                ? personas.map(p => {
-                    const stat = getPersonaStats(path, p.id);
-                    return `
-                    <div class="persona-node" 
-                         role="treeitem"
-                         draggable="true"
-                         data-instance-path="${escapeHtml(path)}"
-                         data-persona-id="${escapeHtml(p.id)}"
-                         data-persona-name="${escapeHtml(p.name)}">
-                        <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
-                        ${getAvatarHtml(p.avatar)}
-                        <span class="persona-label">${escapeHtml(p.name)}</span>
-                        <span class="persona-role">${escapeHtml(p.role || '')}</span>
-                        <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
-                            <span class="stat-errors" title="Errors">${stat.errors}</span>
-                            <span class="stat-success" title="Success">${stat.success}</span>
-                            <span class="stat-total">/ ${stat.total}</span>
-                        </div>
-                        <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(path)}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
-                        <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
-                    </div>
-                `}).join('')
-                : '<div class="subview-empty">No personas</div>';
-
-            const workflowsHtml = workflows.length > 0
-                ? workflows.map(w => `
-                    <div class="workflow-node"
-                         data-instance-path="${escapeHtml(path)}"
-                         data-workflow-id="${escapeHtml(w.id)}">
-                        <span class="workflow-icon">○</span>
-                        <div class="workflow-content">
-                            <div class="workflow-id-row">
-                                <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
-                            </div>
-                            <span class="workflow-label">${escapeHtml(w.name)}</span>
-                            <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
-                            <button class="workflow-launch-btn" data-instance-path="${escapeHtml(path)}" data-workflow-id="${escapeHtml(w.id)}" data-workflow-name="${escapeHtml(w.name)}" data-workflow-ask="${escapeHtml(w.ask || '')}" title="Launch workflow manually">▶ Launch</button>
-                        </div>
-                    </div>
-                `).join('')
-                : '<div class="subview-empty">No workflows</div>';
-
-            const expandedContentHtml = `
-                <div class="expanded-content">
-                    <div class="subview personas-column">
-                        <div class="subview-header">Personas</div>
-                        <div class="persona-list">${personasHtml}</div>
-                        <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
-                    </div>
-                    <div class="subview workflows-column">
-                        <div class="subview-header">Workflows</div>
-                        <div class="workflow-list">${workflowsHtml}</div>
-                        <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
-                        <div class="manual-workflows-section">
-                            <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
-                            <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
-                                <div class="loading-manual-workflows">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const personasHtml = renderPersonasHtml(personas, path);
+            const workflowsHtml = renderWorkflowsHtml(workflows, path);
+            const expandedContentHtml = renderExpandedContentHtml(path, personasHtml, workflowsHtml);
             node.insertAdjacentHTML('beforeend', expandedContentHtml);
 
-            // Load manual workflows after content is inserted
             loadManualWorkflowsForInstance(path, node);
         }
     }
@@ -864,6 +743,74 @@ document.addEventListener('DOMContentLoaded', function() {
     function getPersonaStats(path, personaId) {
         const key = `${path}:${personaId}`;
         return instancePersonaStats[key] || { errors: 0, success: 0, total: 0 };
+    }
+
+    function renderPersonasHtml(personas, path) {
+        if (personas.length === 0) return '<div class="subview-empty">No personas</div>';
+        return personas.map(p => {
+            const stat = getPersonaStats(path, p.id);
+            return `
+            <div class="persona-node"
+                 role="treeitem"
+                 draggable="true"
+                 data-instance-path="${escapeHtml(path)}"
+                 data-persona-id="${escapeHtml(p.id)}"
+                 data-persona-name="${escapeHtml(p.name)}">
+                <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
+                ${getAvatarHtml(p.avatar)}
+                <span class="persona-label">${escapeHtml(p.name)}</span>
+                <span class="persona-role">${escapeHtml(p.role || '')}</span>
+                <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
+                    <span class="stat-errors" title="Errors">${stat.errors}</span>
+                    <span class="stat-success" title="Success">${stat.success}</span>
+                    <span class="stat-total">/ ${stat.total}</span>
+                </div>
+                <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(path)}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
+                <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
+            </div>
+        `}).join('');
+    }
+
+    function renderWorkflowsHtml(workflows, path) {
+        if (workflows.length === 0) return '<div class="subview-empty">No workflows</div>';
+        return workflows.map(w => `
+            <div class="workflow-node"
+                 data-instance-path="${escapeHtml(path)}"
+                 data-workflow-id="${escapeHtml(w.id)}">
+                <span class="workflow-icon">○</span>
+                <div class="workflow-content">
+                    <div class="workflow-id-row">
+                        <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
+                    </div>
+                    <span class="workflow-label">${escapeHtml(w.name)}</span>
+                    <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
+                    <button class="workflow-launch-btn" data-instance-path="${escapeHtml(path)}" data-workflow-id="${escapeHtml(w.id)}" data-workflow-name="${escapeHtml(w.name)}" data-workflow-ask="${escapeHtml(w.ask || '')}" title="Launch workflow manually">▶ Launch</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderExpandedContentHtml(path, personasHtml, workflowsHtml) {
+        return `
+            <div class="expanded-content">
+                <div class="subview personas-column">
+                    <div class="subview-header">Personas</div>
+                    <div class="persona-list">${personasHtml}</div>
+                    <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
+                </div>
+                <div class="subview workflows-column">
+                    <div class="subview-header">Workflows</div>
+                    <div class="workflow-list">${workflowsHtml}</div>
+                    <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
+                    <div class="manual-workflows-section">
+                        <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
+                        <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
+                            <div class="loading-manual-workflows">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     function getPersonaCountHtml(path, state, totalFromFetch) {
@@ -951,68 +898,9 @@ document.addEventListener('DOMContentLoaded', function() {
             existingContent.remove();
         }
 
-        const personasHtml = personas.length > 0
-            ? personas.map(p => {
-                const stat = getPersonaStats(path, p.id);
-                return `
-                <div class="persona-node" 
-                     role="treeitem"
-                     draggable="true"
-                     data-instance-path="${escapeHtml(path)}"
-                     data-persona-id="${escapeHtml(p.id)}"
-                     data-persona-name="${escapeHtml(p.name)}">
-                    <span class="persona-grip" title="Drag to workflow">⋮⋮</span>
-                    ${getAvatarHtml(p.avatar)}
-                    <span class="persona-label">${escapeHtml(p.name)}</span>
-                    <span class="persona-role">${escapeHtml(p.role || '')}</span>
-                    <div class="persona-stats" data-persona-id="${escapeHtml(p.id)}">
-                        <span class="stat-errors" title="Errors">${stat.errors}</span>
-                        <span class="stat-success" title="Success">${stat.success}</span>
-                        <span class="stat-total">/ ${stat.total}</span>
-                    </div>
-                    <button class="persona-knowledge-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" data-instance-path="${escapeHtml(path)}" title="Knowledge files"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
-                    <button class="persona-logs-btn" data-persona-id="${escapeHtml(p.id)}" data-persona-name="${escapeHtml(p.name)}" title="View logs">→</button>
-                </div>
-            `}).join('')
-        : '<div class="subview-empty">No personas</div>';
-
-        const workflowsHtml = workflows.length > 0
-            ? workflows.map(w => `
-                <div class="workflow-node"
-                     data-instance-path="${escapeHtml(path)}"
-                     data-workflow-id="${escapeHtml(w.id)}">
-                    <span class="workflow-icon">○</span>
-                    <div class="workflow-content">
-                        <div class="workflow-id-row">
-                            <span class="workflow-id">${escapeHtml(w.id)}</span><span class="info-icon" data-doc="workflow" title="What is a workflow?">ⓘ</span>
-                        </div>
-                        <span class="workflow-label">${escapeHtml(w.name)}</span>
-                        <span class="workflow-desc">${escapeHtml(w.desc || '')}</span>
-                    </div>
-                </div>
-            `).join('')
-            : '<div class="subview-empty">No workflows</div>';
-
-        const expandedContentHtml = `
-            <div class="expanded-content">
-                <div class="subview personas-column">
-                    <div class="subview-header">Personas</div>
-                    <div class="persona-list">${personasHtml}</div>
-                    <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
-                </div>
-                <div class="subview workflows-column">
-                    <div class="subview-header">Workflows</div>
-                    <div class="workflow-list">${workflowsHtml}</div>
-                    <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
-                    <div class="manual-workflows-section">
-                        <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
-                        <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
-                            <div class="loading-manual-workflows">Loading...</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        const personasHtml = renderPersonasHtml(personas, path);
+        const workflowsHtml = renderWorkflowsHtml(workflows, path);
+        const expandedContentHtml = renderExpandedContentHtml(path, personasHtml, workflowsHtml);
         node.insertAdjacentHTML('beforeend', expandedContentHtml);
 
         loadManualWorkflowsForInstance(path, node);
