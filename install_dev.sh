@@ -35,13 +35,13 @@ verify_and_install_swift() {
 
     echo "Swift is not installed. Installing via swiftly..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        curl -O https://download.swift.org/swiftly/darwin/swiftly.pkg
+        curl --fail -O https://download.swift.org/swiftly/darwin/swiftly.pkg
         installer -pkg swiftly.pkg -target CurrentUserHomeDirectory
         ~/.swiftly/bin/swiftly init --quiet-shell-followup
         . "${SWIFTLY_HOME_DIR:-$HOME/.swiftly}/env.sh"
         hash -r
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        curl -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
+        curl --fail -O "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz"
         tar zxf "swiftly-$(uname -m).tar.gz"
         ./swiftly init --quiet-shell-followup
         . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
@@ -98,14 +98,35 @@ verify_available docker
 
 verify_and_install_swift
 ./_build_and_install_local.sh
-#
+
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    loginctl enable-linger "$(whoami)" 2>/dev/null || true
+
+    if [[ ! -d "/run/user/$(id -u)" ]]; then
+        echo "Waiting for systemd user session..."
+        for i in $(seq 1 10); do
+            [[ -d "/run/user/$(id -u)" ]] && break
+            sleep 1
+        done
+    fi
+    if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+        export XDG_RUNTIME_DIR=/run/user/$(id -u)
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+
+        for f in ~/.bashrc ~/.zshrc; do
+            if [[ -f "$f" ]]; then
+                grep -q 'XDG_RUNTIME_DIR' "$f" || echo '[[ -z "$XDG_RUNTIME_DIR" ]] && export XDG_RUNTIME_DIR=/run/user/$(id -u) && export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"' >> "$f"
+            fi
+        done
+    fi
+
+    mkdir -p ~/.config/systemd/user
+fi
+
 # rm -rf ~/.local/bin/Public
 cp -r Sources/api/Public ~/.local/bin
 pkill openloop-api || true
 sleep 1
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    mkdir -p ~/.config/systemd/user
-fi
 if ! pgrep -x openloop-api > /dev/null 2>&1; then
     (cd ~/.local/bin && ./openloop-api serve --port 54321 --hostname 0.0.0.0 > /dev/null 2>&1 &)
 fi
@@ -125,24 +146,9 @@ echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the 
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    loginctl enable-linger "$(whoami)" 2>/dev/null || true
-
-    if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
-        export XDG_RUNTIME_DIR=/run/user/$(id -u)
-        export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
-
-        for f in ~/.bashrc ~/.zshrc; do
-            if [[ -f "$f" ]]; then
-                grep -q 'XDG_RUNTIME_DIR' "$f" || echo '[[ -z "$XDG_RUNTIME_DIR" ]] && export XDG_RUNTIME_DIR=/run/user/$(id -u) && export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"' >> "$f"
-            fi
-        done
-    fi
-
     echo "Enabled openloop to auto-start after reboot"
     echo "See enabled services:"
     echo "systemctl --user list-units --type=service"
-    # Or to see all user service unit files (including inactive/enabled):
-    # >   systemctl --user list-unit-files --type=service
 fi
 
 echo "Checking oc_docker:"
