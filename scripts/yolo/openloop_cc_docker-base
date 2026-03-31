@@ -177,8 +177,7 @@ if [ -p /dev/stdin ]; then
     #./openloop_cc_docker "hi, what is my name?
     #
     if [ "$use_tier" = true ]; then
-        # cat | /usr/local/bin/docker run --rm -i \
-        cat | docker run --rm -i \
+        cat | /usr/local/bin/docker run --rm -i \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -191,8 +190,7 @@ if [ -p /dev/stdin ]; then
             -w "$PRJ" \
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
-        # cat | /usr/local/bin/docker run --rm -i \
-        cat | docker run --rm -i \
+        cat | /usr/local/bin/docker run --rm -i \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
@@ -207,8 +205,7 @@ if [ -p /dev/stdin ]; then
     fi
 else
     if [ "$use_tier" = true ]; then
-        # /usr/local/bin/docker run --rm \
-        cat | docker run --rm -i \
+        /usr/local/bin/docker run --rm \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0 \
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
@@ -221,8 +218,7 @@ else
             -w "$PRJ" \
             $IMAGE bash -c "$C2 && $CLAUDE_CMD"
     else
-        # /usr/local/bin/docker run --rm \
-        docker run --rm \
+        /usr/local/bin/docker run --rm \
             -v /etc/localtime:/etc/localtime:ro \
             -e ANTHROPIC_LOG=error \
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \

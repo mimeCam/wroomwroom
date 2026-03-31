@@ -188,8 +188,8 @@ fi
 # echo "VOLUME_MOUNTS: ${VOLUME_MOUNTS[@]}"
 # exit 1
 
-# /usr/local/bin/docker run --rm \
-docker run --rm \
+# docker run --rm \ # runner fails to start when it is like this on mac.
+/usr/local/bin/docker run --rm \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$AUTH_FILE:/home/node/.local/share/opencode/auth.json" \
     -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \
