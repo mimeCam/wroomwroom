@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
+#
 
 IMAGE="yolo_devcontainer:swiftbridge"
 _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 unset API_KEY API_ENDPOINT
-"$_dir/openloop_cc_docker-base" "$IMAGE" "" "$@"
+export API_KEY="🔥🔥🔥"
+export API_ENDPOINT="https://api.z.ai/api/anthropic"
+
+"$_dir/openloop_cc_docker-base" "$IMAGE" "-z" "$@"

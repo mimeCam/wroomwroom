@@ -160,8 +160,10 @@ echo "You may need to setup auth for AI agents (opencode, claude-code). See http
 
 echo "Checking oc_docker:"
 openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparrow ey" "plan"
-# echo "Checking cc_docker:"
-# openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
+if [ -d "$HOME/.claude" ]; then
+    echo "Checking cc_docker (subscription):"
+    openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
+fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open http://localhost:54321/ || true
