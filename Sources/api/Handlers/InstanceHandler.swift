@@ -16,7 +16,6 @@ struct InstanceHandler: Sendable {
                 }
                 let date = Date(timeIntervalSinceReferenceDate: s.lastLoopAt)
                 let unixMs = Int64(date.timeIntervalSince1970 * 1000)
-                print("DEBUG: Loading state for instance: \(path), lastLoopAt: \(s.lastLoopAt), unixMs: \(unixMs)")
                 let stateInfo = InstanceStateInfo(
                     lastLoopAtUnixMs: unixMs,
                     activeRunningWorkflows: s.activeRunningWorkflows,
@@ -24,7 +23,7 @@ struct InstanceHandler: Sendable {
                 )
                 instances.append(InstanceInfo(path: path, state: stateInfo))
             } catch {
-                print("DEBUG: Failed to load state for instance: \(path), error: \(error)")
+                print("ERR: Failed to load state for instance: \(path), error: \(error)")
                 let stateInfo: InstanceStateInfo? = nil
                 instances.append(InstanceInfo(path: path, state: stateInfo))
             }

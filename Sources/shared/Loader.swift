@@ -26,15 +26,12 @@ public extension FileLoader {
             .appending("state.\(json)")
 
         let exists = PathIO.isFileExistent(atPath: fp.string)
-        print("DEBUG: loadInstanceState - path: \(fp.string), exists: \(exists)")
 
         guard exists else {
             return nil
         }
 
-        let state: InstanceState = try await loadAtPath(fp)
-        print("DEBUG: loadInstanceState - loaded state for \(instancePath): lastLoopAt=\(state.lastLoopAt)")
-        return state
+        return try await loadAtPath(fp)
     }
 
     static func saveRunLog(_ log: RunLog) async throws {
