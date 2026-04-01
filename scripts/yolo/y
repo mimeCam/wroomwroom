@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+#
+# y - shared base for yolo-anthropic scripts (ya, ywa)
+#
+
+current_dir=$(pwd)
+if [[ "$current_dir" != "$HOME"/* && "$current_dir" != /private/var/folders/* && "$current_dir" != /var/folders/* ]]; then
+    echo "OOPS: Current directory must be at least 1 level deep inside HOME directory or inside a system's temp folder."
+    echo "Current directory: $current_dir"
+    echo "Home directory: $HOME"
+    echo "Exiting now. Execution in root HOME dir is not allowed."
+
+    exit 2
+fi
+
+SYSTEM_PROMPT='You (LLM agent) and me are in a pair-programming session together.
+
+We align to these rules for our pair-programming environment:
+- do not add comments to a newly produced code - we are professionals and understand generated code 100%.
+- do not remove existing comments that were left previously as these may be needed later to re-enable those features in the future.
+- no function can be longer than 10 lines, refactor otherwise. Leverage functional programming best practices
+
+Think a lot before writting an implementation. Imagine a system as if it was drawn on a paper in plain diagram: improve this diagram, verify and approve the diagram first and only then proceed to implementing it in code.
+
+Be pragmatic and concise.'
+
+
+IMAGE="yolo_devcontainer"
+
+# Files/subfolders to copy from $HOME/.claude to sandbox
+# Empty = copy nothing (fresh environment)
+CLAUDE_SYNC_ITEMS=".credentials.json CLAUDE.md settings.json"
+# plugins # - fails to copy this folder.
+
+CLAUDE_JSON="$HOME/.claude.json"
+CLAUDE_JSON_BK="$HOME/.claude.json.backup"
+CLAUDE_DIR="$HOME/.claude"
+
+mkdir -p "$CLAUDE_DIR"
+[ ! -f "$CLAUDE_JSON" ] && echo '{}' > "$CLAUDE_JSON"
+[ ! -f "$CLAUDE_JSON_BK" ] && echo '{}' > "$CLAUDE_JSON_BK"
+
+# Create sandbox with .claude.json files + selective .claude folder
+CLAUDE_SBX=$(mktemp -d)
+[ -f "$CLAUDE_JSON" ] && cp "$CLAUDE_JSON" "$CLAUDE_SBX/.claude.json"
+[ -f "$CLAUDE_JSON_BK" ] && cp "$CLAUDE_JSON_BK" "$CLAUDE_SBX/.claude.json.backup"
+mkdir -p "$CLAUDE_SBX/.claude"
+for item in $CLAUDE_SYNC_ITEMS; do
+    [ -e "$HOME/.claude/$item" ] && cp -R "$HOME/.claude/$item" "$CLAUDE_SBX/.claude/"
+done
+restore() {
+    [ -f "$CLAUDE_SBX/.claude.json" ] && cp "$CLAUDE_SBX/.claude.json" "$CLAUDE_JSON"
+    [ -f "$CLAUDE_SBX/.claude.json.backup" ] && cp "$CLAUDE_SBX/.claude.json.backup" "$CLAUDE_JSON_BK"
+    mkdir -p "$CLAUDE_DIR"
+    for item in $CLAUDE_SYNC_ITEMS; do
+        [ -e "$CLAUDE_SBX/.claude/$item" ] && cp -R "$CLAUDE_SBX/.claude/$item" "$CLAUDE_DIR/"
+    done
+    rm -rf "$CLAUDE_SBX"
+    echo "OK. Restored cc-config files."
+}
+on_exit() {
+    if [ $? -eq 0 ]; then
+        restore
+    else
+        echo "ERR. Docker run failed, cc-config files NOT restored."
+        rm -rf "$CLAUDE_SBX"
+    fi
+}
+trap on_exit EXIT
+#
+echo "Copied cc-config files to CLAUDE_SBX: $CLAUDE_SBX"
+
+
+C2=". /home/node/.local/bin/env"
+
+PROMPT_FLAG=""
+if [ -n "$PROMPT" ]; then
+    PROMPT_FLAG="-p \"$PROMPT\""
+fi
+
+docker run --rm -it \
+	-v "$CLAUDE_SBX/.claude:/home/node/.claude" \
+	-v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
+	-v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
+	-e COLORTERM=truecolor \
+	-e ANTHROPIC_LOG=error \
+	-e BASH_DEFAULT_TIMEOUT_MS=40 \
+	-v "$PWD:$PWD" \
+	-w "$PWD" \
+	--name "$CONTAINER_NAME" \
+	$IMAGE bash -c "$C2 && claude --dangerously-skip-permissions --append-system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"

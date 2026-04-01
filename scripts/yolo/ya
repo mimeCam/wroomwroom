@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# ya - yolo-anthropic (one-shot): Claude code with Anthropic as inference provider, requires prompt
+#
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+PROMPT="$1"
+if [ -z "$PROMPT" ]; then
+    echo "Error: PROMPT is required" >&2
+    echo "Usage: $0 \"your prompt here\"" >&2
+    exit 1
+fi
+
+CONTAINER_NAME="ya"
+source "$SCRIPT_DIR/y"
