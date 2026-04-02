@@ -1465,6 +1465,98 @@ body {
     color: #ef4444;
 }
 
+.wf-level-reorderable {
+    position: relative;
+}
+
+.wf-level-drag-handle {
+    cursor: grab;
+    opacity: 0.3;
+    font-size: 14px;
+    color: var(--text-faint);
+    user-select: none;
+    margin-right: 6px;
+    transition: opacity var(--transition-fast);
+    letter-spacing: -2px;
+    line-height: 1;
+}
+
+.wf-level-reorderable:hover .wf-level-drag-handle {
+    opacity: 0.7;
+}
+
+.wf-level-drag-handle:active {
+    cursor: grabbing;
+}
+
+.wf-level-reorder-btns {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.wf-level-move-up,
+.wf-level-move-down {
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 10px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    padding: 0;
+    line-height: 1;
+}
+
+.wf-level-move-up:hover,
+.wf-level-move-down:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.wf-level-move-up:active,
+.wf-level-move-down:active {
+    transform: scale(0.95);
+    background: var(--accent-glow);
+}
+
+.wf-level-moved {
+    animation: wfLevelMoved 400ms ease-out;
+}
+
+@keyframes wfLevelMoved {
+    0% { transform: scale(1); box-shadow: var(--shadow-sm); }
+    40% { transform: scale(1.01); box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2), var(--shadow-sm); }
+    100% { transform: scale(1); box-shadow: var(--shadow-sm); }
+}
+
+.wf-level-dragging-opacity {
+    opacity: 0.4;
+}
+
+.wf-level-drag-over-top {
+    box-shadow: 0 -2px 0 0 var(--accent-primary);
+}
+
+.wf-level-drag-over-bottom {
+    box-shadow: 0 2px 0 0 var(--accent-primary);
+}
+
+.wf-level-reorderable[draggable="true"] .wf-level-header {
+    cursor: grab;
+}
+
+.wf-level-reorderable[draggable="true"] .wf-level-header:active {
+    cursor: grabbing;
+}
+
 .wf-level-slots {
     display: flex;
     flex-wrap: wrap;

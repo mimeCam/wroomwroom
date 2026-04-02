@@ -1921,7 +1921,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (levels.length === 0) {
             levels = [[]];
         }
-        
+
+        const showReorder = levels.length >= 3;
+
         return levels.map((level, levelIndex) => {
             const slotsHtml = level.map((entryId, slotIndex) => {
                 const persona = personas.find(p => p.id === entryId);
@@ -1942,10 +1944,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `;
             }).join('');
-            
+
+            const reorderBtns = showReorder ? `
+                <div class="wf-level-reorder-btns">
+                    ${levelIndex > 0 ? '<button class="wf-level-move-up" title="Move level up" aria-label="Move level up">▲</button>' : ''}
+                    ${levelIndex < levels.length - 1 ? '<button class="wf-level-move-down" title="Move level down" aria-label="Move level down">▼</button>' : ''}
+                </div>
+            ` : '';
+
+            const dragHandle = showReorder ? '<span class="wf-level-drag-handle" title="Drag to reorder">⠿</span>' : '';
+
             return `
-                <div class="wf-level" data-level="${levelIndex}">
+                <div class="wf-level${showReorder ? ' wf-level-reorderable' : ''}" data-level="${levelIndex}" draggable="${showReorder ? 'true' : 'false'}">
                     <div class="wf-level-header">
+                        ${dragHandle}
                         <span class="wf-level-label">Level ${levelIndex}</span>
                         ${levelIndex > 0 ? '<button class="wf-level-remove" title="Remove level">×</button>' : ''}
                     </div>
@@ -1955,6 +1967,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <span class="wf-slot-plus">+</span>
                         </div>
                     </div>
+                    ${reorderBtns}
                 </div>
             `;
         }).join('');
@@ -2017,6 +2030,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const levelIndex = parseInt(level.dataset.level);
                 removeLevel(editor, instancePath, workflowId, levelIndex, personas);
             }
+
+            if (e.target.classList.contains('wf-level-move-up')) {
+                const level = e.target.closest('.wf-level');
+                const levelIndex = parseInt(level.dataset.level);
+                moveLevel(editor, instancePath, workflowId, levelIndex, -1, personas);
+                return;
+            }
+
+            if (e.target.classList.contains('wf-level-move-down')) {
+                const level = e.target.closest('.wf-level');
+                const levelIndex = parseInt(level.dataset.level);
+                moveLevel(editor, instancePath, workflowId, levelIndex, 1, personas);
+                return;
+            }
             
             const placeholderSlot = e.target.closest('.wf-slot.placeholder');
             if (placeholderSlot && !e.target.classList.contains('wf-slot-remove')) {
@@ -2024,6 +2051,101 @@ document.addEventListener('DOMContentLoaded', function() {
                 const slotIndex = parseInt(placeholderSlot.dataset.slot);
                 openPersonaSelector(levelIndex, slotIndex, personas, editor, instancePath, workflowId, allWorkflows);
             }
+        });
+
+        setupLevelDragReorder(levelsContainer, editor, instancePath, workflowId, personas);
+    }
+
+    function setupLevelDragReorder(levelsContainer, editor, instancePath, workflowId, personas) {
+        let draggedLevel = null;
+
+        levelsContainer.addEventListener('dragstart', (e) => {
+            const level = e.target.closest('.wf-level.wf-level-reorderable');
+            if (!level) return;
+            if (e.target.closest('.wf-slot') || e.target.closest('.wf-level-reorder-btns')) return;
+            draggedLevel = level;
+            level.classList.add('wf-level-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/x-wf-level', level.dataset.level);
+            requestAnimationFrame(() => {
+                level.classList.add('wf-level-dragging-opacity');
+            });
+        });
+
+        levelsContainer.addEventListener('dragend', (e) => {
+            const level = e.target.closest('.wf-level');
+            if (!level) return;
+            level.classList.remove('wf-level-dragging', 'wf-level-dragging-opacity');
+            draggedLevel = null;
+            levelsContainer.querySelectorAll('.wf-level-drag-over-top, .wf-level-drag-over-bottom').forEach(el => {
+                el.classList.remove('wf-level-drag-over-top', 'wf-level-drag-over-bottom');
+            });
+        });
+
+        levelsContainer.addEventListener('dragover', (e) => {
+            if (!draggedLevel) return;
+            if (e.target.closest('.wf-slot')) return;
+            const targetLevel = e.target.closest('.wf-level');
+            if (!targetLevel || targetLevel === draggedLevel) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            levelsContainer.querySelectorAll('.wf-level-drag-over-top, .wf-level-drag-over-bottom').forEach(el => {
+                el.classList.remove('wf-level-drag-over-top', 'wf-level-drag-over-bottom');
+            });
+
+            const rect = targetLevel.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const isTop = e.clientY < midY;
+            const fromIdx = parseInt(draggedLevel.dataset.level);
+            const toIdx = parseInt(targetLevel.dataset.level);
+
+            if ((fromIdx < toIdx && isTop) || (fromIdx > toIdx && !isTop)) return;
+
+            targetLevel.classList.add(isTop ? 'wf-level-drag-over-top' : 'wf-level-drag-over-bottom');
+        });
+
+        levelsContainer.addEventListener('dragleave', (e) => {
+            const targetLevel = e.target.closest('.wf-level');
+            if (targetLevel) {
+                targetLevel.classList.remove('wf-level-drag-over-top', 'wf-level-drag-over-bottom');
+            }
+        });
+
+        levelsContainer.addEventListener('drop', (e) => {
+            if (!draggedLevel) return;
+            if (e.target.closest('.wf-slot')) return;
+            e.preventDefault();
+            const targetLevel = e.target.closest('.wf-level');
+            if (!targetLevel || targetLevel === draggedLevel) return;
+
+            const fromIndex = parseInt(draggedLevel.dataset.level);
+            const toIndex = parseInt(targetLevel.dataset.level);
+
+            levelsContainer.querySelectorAll('.wf-level-drag-over-top, .wf-level-drag-over-bottom').forEach(el => {
+                el.classList.remove('wf-level-drag-over-top', 'wf-level-drag-over-bottom');
+            });
+
+            const levels = getLevelsFromEditor(editor);
+            const rect = targetLevel.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            let insertIndex = e.clientY < midY ? toIndex : toIndex + 1;
+            if (fromIndex < insertIndex) insertIndex--;
+
+            if (fromIndex === insertIndex) return;
+
+            const moved = levels.splice(fromIndex, 1)[0];
+            levels.splice(insertIndex, 0, moved);
+            refreshLevelsUI(editor, levels, personas);
+            saveWorkflowLevels(editor, instancePath, workflowId, levels);
+
+            const movedLevel = levelsContainer.querySelectorAll('.wf-level')[insertIndex];
+            if (movedLevel) {
+                movedLevel.classList.add('wf-level-moved');
+                setTimeout(() => movedLevel.classList.remove('wf-level-moved'), 400);
+            }
+
+            draggedLevel = null;
         });
     }
 
@@ -2068,6 +2190,23 @@ document.addEventListener('DOMContentLoaded', function() {
             levels.splice(levelIndex, 1);
             await saveWorkflowLevels(editor, instancePath, workflowId, levels);
             refreshLevelsUI(editor, levels, personas);
+        }
+    }
+
+    async function moveLevel(editor, instancePath, workflowId, levelIndex, direction, personas) {
+        const levels = getLevelsFromEditor(editor);
+        const newIndex = levelIndex + direction;
+        if (newIndex < 0 || newIndex >= levels.length) return;
+        const temp = levels[levelIndex];
+        levels[levelIndex] = levels[newIndex];
+        levels[newIndex] = temp;
+        refreshLevelsUI(editor, levels, personas);
+        await saveWorkflowLevels(editor, instancePath, workflowId, levels);
+        const container = editor.querySelector('.wf-levels-container');
+        const movedLevel = container.querySelectorAll('.wf-level')[newIndex];
+        if (movedLevel) {
+            movedLevel.classList.add('wf-level-moved');
+            setTimeout(() => movedLevel.classList.remove('wf-level-moved'), 400);
         }
     }
 

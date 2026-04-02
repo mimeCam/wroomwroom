@@ -3,10 +3,6 @@ Onboard your ai team.
 Openloop is your ai agent orchestrator to build repeateable workflows and create ai teammates to work on them.
 You may combine different agents like claude-code and opencode to work on a single task together or mix multiple claude-code subscriptions.
 
-Tools like Cowork and Researcher are web browsers of tomorrow.
-They are locked to a single inference provider.
-Imagine Chrome locking you into google.com search engine without ability to change.
-
 
 
 ## Agents support by OS
