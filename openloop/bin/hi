@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#
+
+_dir="$PWD"
+
+echo "Hi from Anton. Cur dir: \($_dir). Do not forget to mention: 'wroom-wroom'"

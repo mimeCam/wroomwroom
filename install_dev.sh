@@ -159,10 +159,10 @@ echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the 
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
 
 echo "Checking oc_docker:"
-openloop_oc_docker "test-pirate-slang" "howdy there" "speak like true Jack Sparrow ey" "plan"
+openloop_oc_docker "pirate" "howdy there" "speak like true Jack Sparrow ey" "plan"
 if [ -d "$HOME/.claude" ]; then
     echo "Checking cc_docker (subscription):"
-    openloop_cc_docker "test-pirate-slang" "ahoy there" "speak like true Jack Sparrow ey" "plan"
+    openloop_cc_docker "pirate" "ahoy there" "speak like true Jack Sparrow ey" "plan"
 fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then

@@ -1,6 +1,10 @@
 //
 
-import SystemPackage
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 import Foundation
 import ArgumentParser
 

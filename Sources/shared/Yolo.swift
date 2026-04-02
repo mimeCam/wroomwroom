@@ -1,11 +1,15 @@
 
-import SystemPackage // Crashes on linux
-//import System
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 import Foundation
 import Subprocess
 
 public func subprocess(
-    _ name: String,
+//    _ name: String,
+    _ name: FilePath,
     args userArgs: [String],
     chroot: FilePath?,
     stdin: String? = nil
@@ -25,12 +29,8 @@ public func subprocess(
         _ stdin: I
     ) async throws -> String? {
         let res = try await run(
-            .path(
-                .init(NSHomeDirectory())
-                .appending(".local")
-                .appending("bin")
-                .appending(name)
-            ),
+//            executable,
+            .path(name),
             arguments: .init(userArgs),
             workingDirectory: (verifiedChroot == nil) ? nil : .init(verifiedChroot!),
             input: stdin,

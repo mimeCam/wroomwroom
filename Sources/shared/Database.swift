@@ -1,7 +1,11 @@
 import Foundation
 import Logging
 import SQLite
-import SystemPackage
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 
 private let log = PrintLog(module: "Database")
 

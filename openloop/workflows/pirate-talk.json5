@@ -1,12 +1,12 @@
 {
+  "name" : "Wroom wroom, just a pirate test",
+  "desc" : "Real savvy",
   "ask" : "What date is today?",
+  "every_secs" : 0,
   "levels" : [
     [
-      "pirate"
+      "shell-agent-local"
     ]
   ],
-  "name" : "Wroom wroom, just a pirate test",
-  "every_secs" : 0,
-  "agent" : "oc_docker",
-  "desc" : "Real savvy"
+  "agent" : "oc_docker"
 }

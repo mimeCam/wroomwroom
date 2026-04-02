@@ -1,5 +1,9 @@
 
-import SystemPackage
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 import Foundation
 import Dispatch
 import ArgumentParser
@@ -580,15 +584,34 @@ Familiarize yourself with the guides and then `cd ..` to the project's root fold
             let systemPrompt = from.persona?.about ?? ""
 
             let agent: String
-            if let pa = from.persona?.agent, pa.notEmpty,
-               PathIO.isFileExistent(atPath: Paths.bin.appending(pa).string) {
-                agent = pa
+            let agentPath: FilePath
+            if let pa = from.persona?.agent, pa.notEmpty {
+                // Project-specific scripts inside <prj>/openloop/bin does not need `openloop_` prefix.
+                // Only ~/.local/bin/openloop_* should be prefixed.
+                let shortName = String(pa.trimmingPrefix("openloop_"))
+
+                let prjBin = Paths.curDir
+                    .appending("openloop").appending("bin")
+                    .appending(shortName)
+                let userLocalBin = Paths.bin.appending(pa)
+
+                if PathIO.isFileExistent(atPath: prjBin.string) {
+                    agent = shortName
+                    agentPath = prjBin
+                } else if PathIO.isFileExistent(atPath: userLocalBin.string) {
+                    agent = pa
+                    agentPath = userLocalBin
+                } else {
+                    agent = workflowAgent
+                    agentPath = Paths.bin.appending(workflowAgent)
+                }
             } else {
                 agent = workflowAgent
+                agentPath = Paths.bin.appending(workflowAgent)
             }
 
             res = try await subprocess(
-                agent,
+                agentPath,
                 args: (mode == nil) ? [
                     from.realId, prompt, systemPrompt
                 ] : [

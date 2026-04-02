@@ -1,7 +1,11 @@
 //
 
 import Foundation
-import SystemPackage
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 
 public struct InstanceState: Codable {
 

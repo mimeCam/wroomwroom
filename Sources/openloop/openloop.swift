@@ -1,6 +1,10 @@
 
 import Foundation
-import SystemPackage
+#if canImport(System)
+@preconcurrency import System
+#else
+@preconcurrency import SystemPackage
+#endif
 import Dispatch
 import shared
 import ArgumentParser
@@ -76,10 +80,10 @@ private func prepareFolders() {
         atPath: curDirOpenloop.appending("knowledge").string
     )
     assert(created13)
-//    let created14 = PathIO.createDirectoryIfNotExists(
-//        atPath: curDirOpenloop.appending("bin").string
-//    )
-//    assert(created14)
+    let created14 = PathIO.createDirectoryIfNotExists(
+        atPath: curDirOpenloop.appending("bin").string
+    )
+    assert(created14)
 
     let shareOpenloop = Paths.share.appending("openloop")
     let created20 = PathIO.createDirectoryIfNotExists(
@@ -200,7 +204,10 @@ private func runWorkflow(
     print("Start workflow: \(id)")
 
     let res = try await subprocess(
-        "openloop-runner",
+        FilePath(NSHomeDirectory())
+            .appending(".local")
+            .appending("bin")
+            .appending("openloop-runner"),
         args: [id, w.ask],
         chroot: .init(Paths.curDir)
     )
