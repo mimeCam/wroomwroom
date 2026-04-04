@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# yz - yolo-z (one-shot): Claude code with z API as inference provider, requires prompt
+#
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+PROMPT="$1"
+if [ -z "$PROMPT" ]; then
+    echo "Error: PROMPT is required" >&2
+    echo "Usage: $0 \"your prompt here\"" >&2
+    exit 1
+fi
+
+CONTAINER_NAME="yz"
+source "$SCRIPT_DIR/y-z"

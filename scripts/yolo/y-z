@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# y-z - shared base for yolo-z scripts (yz, ywz) using API_KEY + API_ENDPOINT
+#
+
+current_dir=$(pwd)
+if [[ "$current_dir" != "$HOME"/* && "$current_dir" != /private/var/folders/* && "$current_dir" != /var/folders/* ]]; then
+    echo "OOPS: Current directory must be at least 1 level deep inside HOME directory or inside a system's temp folder."
+    echo "Current directory: $current_dir"
+    echo "Home directory: $HOME"
+    echo "Exiting now. Execution in root HOME dir is not allowed."
+
+    exit 2
+fi
+
+SYSTEM_PROMPT='You (LLM agent) and me are in a pair-programming session together.
+
+We align to these rules for our pair-programming environment:
+- do not add comments to a newly produced code - we are professionals and understand generated code 100%.
+- do not remove existing comments that were left previously as these may be needed later to re-enable those features in the future.
+- no function can be longer than 10 lines, refactor otherwise. Leverage functional programming best practices
+
+Think a lot before writting an implementation. Imagine a system as if it was drawn on a paper in plain diagram: improve this diagram, verify and approve the diagram first and only then proceed to implementing it in code.
+
+Be pragmatic and concise.'
+
+
+IMAGE="yolo_devcontainer"
+
+unset API_KEY API_ENDPOINT
+export API_KEY="🔥🔥🔥"
+export API_ENDPOINT="https://api.z.ai/api/anthropic"
+
+PROMPT_FLAG=""
+if [ -n "$PROMPT" ]; then
+    PROMPT_FLAG="-p \"$PROMPT\""
+fi
+
+docker run --rm -it \
+	-e COLORTERM=truecolor \
+	-e ANTHROPIC_LOG=error \
+	-e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+	-e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
+	-e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
+	-e BASH_DEFAULT_TIMEOUT_MS=20 \
+	-v "$PWD:$PWD" \
+	-w "$PWD" \
+	--name "$CONTAINER_NAME" \
+	$IMAGE bash -c ". /home/node/.local/bin/env && claude --dangerously-skip-permissions --append-system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"

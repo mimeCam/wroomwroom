@@ -202,7 +202,7 @@ if [ -p /dev/stdin ]; then
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
             -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
             -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
-            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e BASH_DEFAULT_TIMEOUT_MS=20 \
             -e "PROMPT=${PROMPT}" \
             -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
             "${VOLUME_MOUNTS[@]}" \
@@ -217,7 +217,7 @@ if [ -p /dev/stdin ]; then
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
             -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
             -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
-            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e BASH_DEFAULT_TIMEOUT_MS=20 \
             -e "PROMPT=${PROMPT}" \
             -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
             "${VOLUME_MOUNTS[@]}" \
@@ -234,7 +234,7 @@ else
             -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
             -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
             -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
-            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e BASH_DEFAULT_TIMEOUT_MS=20 \
             -e "PROMPT=${PROMPT}" \
             -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
             "${VOLUME_MOUNTS[@]}" \
@@ -249,7 +249,7 @@ else
             -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
             -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
             -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
-            -e BASH_DEFAULT_TIMEOUT_MS=40 \
+            -e BASH_DEFAULT_TIMEOUT_MS=20 \
             -e "PROMPT=${PROMPT}" \
             -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
             "${VOLUME_MOUNTS[@]}" \

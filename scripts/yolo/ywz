@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#
+# ywz - yolo-wait-z (interactive): Claude code with z API as inference provider
+#
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+CONTAINER_NAME="ywz"
+source "$SCRIPT_DIR/y-z"

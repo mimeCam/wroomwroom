@@ -2,8 +2,9 @@
 .build/
 
 .vibe/
-
+.claude/
 .opencode/
+
 openloop-stderr.log
 openloop-stdout.log
 **/openloop/api-stderr.log
