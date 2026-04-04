@@ -35,7 +35,12 @@ public extension FileLoader {
             return nil
         }
 
-        return try await loadAtPath(fp)
+        do {
+            return try await loadAtPath(fp)
+        } catch {
+            try? FileManager.default.removeItem(atPath: fp.string)
+            throw error
+        }
     }
 
     static func saveRunLog(_ log: RunLog) async throws {
