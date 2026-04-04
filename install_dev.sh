@@ -14,6 +14,8 @@ fi
 cd "$(dirname "$0")"
 
 if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
+    apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev libgcc-13-dev libpython3-dev libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
+
     echo "Error: Running as root or under /root/ is not supported." >&2
     echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2
     echo "Run as a different (non-root) user." >&2
@@ -23,6 +25,7 @@ if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
     echo "usermod -aG docker node"
     echo "passwd node"
     echo "su - node"
+    echo ""
 
     exit 1
 fi

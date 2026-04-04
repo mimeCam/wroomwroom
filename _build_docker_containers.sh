@@ -13,8 +13,8 @@ cd "$(dirname "$0")"
 # Build base image first (no Swift)
 docker build -f Dockerfile.devcontainer -t "yolo_devcontainer" .
 
-# Native Swift variant
-docker build -f Dockerfile.devcontainer-swift -t "yolo_devcontainer:swift" .
+# # Native Swift variant
+# docker build -f Dockerfile.devcontainer-swift -t "yolo_devcontainer:swift" .
 
 if [ "$(hostname)" == "realm13.local" ]; then
     #
