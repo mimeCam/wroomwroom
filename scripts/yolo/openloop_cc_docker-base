@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # openloop_cc_docker - Run openloop with docker containerization
-# Usage: openloop_cc_docker "image" "suffix" "persona" "prompt" ["system_prompt"] ["mode"]
+# Usage: openloop_cc_docker-base "image" "suffix" "persona" "prompt" ["system_prompt"] ["mode"]
 #   4 args:  image, suffix, persona, prompt
 #   5 args:  image, suffix, persona, prompt, system_prompt
 #   6 args:  image, suffix, persona, prompt, system_prompt, mode

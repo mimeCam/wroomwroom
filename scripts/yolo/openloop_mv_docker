@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+IMAGE="yolo_devcontainer"
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$_dir/openloop_mv_docker-base" "$IMAGE" "$@"

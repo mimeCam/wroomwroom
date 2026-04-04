@@ -541,7 +541,7 @@ Infer context from the parent task:
 \(levels.count > 1 ? "Work on your core task only and not parent task since you are working within a larger team." : "")
 \(hasContext ? "Review team reports, provide your professional analysis, and create an updated comprehensive report incorporating all inputs." : "")
 
-\(levels.count > 1 ? "Explain your findings here directly, without saving to file(s)." : "")
+\(levels.count > 1 ? "Explain your suggestions directly in chat without saving findings to a file." : "")
 
 FYI: Main project files are located 1 directory level up from here.
 Current directory is read-only and contains various guides that should help with the task.

@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# openloop_mv_docker - Run openloop with docker containerization
+# Usage: openloop_mv_docker-base "image" "persona" "prompt" ["system_prompt"] ["mode"]
+#   2 args:  persona, prompt
+#   3 args:  persona, prompt, system_prompt
+#   4 args:  persona, prompt, system_prompt, mode
+#
+# Supports stdin
+#
+
+# this is noop. _build_and_install_local rewrites `$DOCKER`.
+DOCKER=$(whereis docker | awk '{print $2}') # if simply `docker` then this script fails to start docker when launched by openloop-runner.
+
+IMAGE="$1"
+
+shift
+
+# Handle optional parameters
+PERSONA=""
+if [ $# -ge 1 ]; then
+    PERSONA="$1"
+fi
+PROMPT=""
+if [ $# -ge 2 ]; then
+    PROMPT="$2"
+fi
+SYSTEM_PROMPT=""
+if [ $# -ge 3 ]; then
+    SYSTEM_PROMPT="$3"
+fi
+MODE=""
+if [ $# -ge 4 ]; then
+    MODE="$4"
+fi
+
+# Validate required parameters
+if [ -z "$PERSONA" ]; then
+    echo "Error: PERSONA is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+if [ -z "$PROMPT" ]; then
+    echo "Error: PROMPT is required" >&2
+    echo "Usage: $0 \"persona\" \"prompt\" [\"system_prompt\"] [\"mode\"]" >&2
+    exit 1
+fi
+
+ROOT="$PWD"
+
+# Check that openloop directory exists
+if [ ! -d "$ROOT/openloop" ]; then
+    echo "Error: openloop directory not found in $ROOT" >&2
+    exit 1
+fi
+
+
+# Capture piped stdin at top level (before any subshells)
+YOLO_STDIN=""
+if [ -p /dev/stdin ]; then
+    YOLO_STDIN=$(cat)
+fi
+
+make_prompt_text() {
+    local PROMPT="$1"
+
+    if [ -n "$YOLO_STDIN" ]; then
+        PROMPT=$(cat <<EOF
+${1}
+
+# Reports
+${YOLO_STDIN}
+EOF
+)
+    fi
+
+    echo "$PROMPT"
+}
+
+PROMPT_TEXT=$(make_prompt_text "$PROMPT")
+
+
+# Always use $HOME/.vibe for config
+mkdir -p "$HOME/.vibe"
+
+VOLUME_MOUNTS=()
+VOLUME_MOUNTS+=(-v "$HOME/.vibe:/home/node/.vibe")
+
+if [ -n "$SYSTEM_PROMPT" ]; then
+    #
+    # Hack: override default cli.md - not working
+    # mistral-vibe status: do not use - no convinient system_prompt override available
+    #
+    # overriding only system_prompt in vibe is a pain
+    # vibe forces creating new custom agent
+    # custom agent derives default tools access - many tools are `ask`
+    # creating rw custom agent requires manually setting permissions for each tool one-by-one
+    # this is not feasible in a setup with dynamic MCPs
+    #
+    SYSTEM_PROMPT_TMP_DIR=$(mktemp -d)
+    cat > "$SYSTEM_PROMPT_TMP_DIR/cli.md" <<EOF
+${SYSTEM_PROMPT}
+EOF
+    VOLUME_MOUNTS+=(-v "$SYSTEM_PROMPT_TMP_DIR:/home/node/.vibe/prompts")
+fi
+
+if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
+    VOLUME_MOUNTS+=(-v "$HOME/Library/Developer/Xcode/DerivedData:$HOME/Library/Developer/Xcode/DerivedData:ro")
+fi
+
+[ -f "$HOME/.gitignore" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitignore:/home/node/.gitignore:ro")
+[ -f "$HOME/.gitconfig" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitconfig:/home/node/.gitconfig:ro")
+
+if [ "${MODE}" == "plan" ]; then
+    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT:ro")
+else
+    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
+    MODE="auto-approve"
+fi
+
+if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    PRJ="$ROOT"
+
+    VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
+else
+    PRJ="$ROOT/openloop"
+
+    VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
+fi
+
+# Source environment setup
+C2=". /home/node/.local/bin/env"
+
+OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text")
+
+$DOCKER run --rm \
+    --init --pids-limit=500 \
+    -v /etc/localtime:/etc/localtime:ro \
+    -e "PROMPT_TEXT=${PROMPT_TEXT}" \
+    "${VOLUME_MOUNTS[@]}" \
+    -w "$PRJ" \
+    $IMAGE "${OCRUN[@]}"
+
+# Cleanup temp system prompt directory
+if [ -n "$SYSTEM_PROMPT_TMP_DIR" ]; then
+    rm -rf "$SYSTEM_PROMPT_TMP_DIR"
+fi

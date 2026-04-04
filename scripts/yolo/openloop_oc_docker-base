@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # openloop_cc_docker - Run openloop with docker containerization
-# Usage: openloop_cc_docker "persona" "prompt" ["system_prompt"] ["mode"]
+# Usage: openloop_cc_docker-base "persona" "prompt" ["system_prompt"] ["mode"]
 #   2 args:  persona, prompt
 #   3 args:  persona, prompt, system_prompt
 #   4 args:  persona, prompt, system_prompt, mode
 #
-# Supports stdin streaming
+# Supports stdin
 #
 
 # this is noop. _build_and_install_local rewrites `$DOCKER`.

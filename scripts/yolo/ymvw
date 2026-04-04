@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#
+# ymvw - yolo-mistral-vibe-wait (interactive): Mistral Vibe with Mistral as inference provider
+#
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+CONTAINER_NAME="ymvw"
+source "$SCRIPT_DIR/ymv_"

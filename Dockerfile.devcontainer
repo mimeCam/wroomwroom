@@ -156,6 +156,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.profile
 RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.bashrc
 
+RUN curl -LsSf https://mistral.ai/vibe/install.sh | bash
+# RUN uv tool install mistral-vibe
+
 RUN curl -fsSL https://opencode.ai/install | bash
 
 RUN echo 'export PATH=$HOME/.opencode/bin:$PATH' >> ~/.profile
@@ -170,4 +173,5 @@ USER root
 RUN ln -s /home/node/.opencode/bin/opencode /usr/local/bin/opencode
 RUN ln -s /home/node/.local/bin/uv /usr/local/bin/uv
 RUN ln -s /home/node/.local/bin/uvx /usr/local/bin/uvx
+RUN ln -s /home/node/.local/bin/vibe /usr/local/bin/vibe
 USER node

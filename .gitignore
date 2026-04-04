@@ -1,5 +1,8 @@
 .DS_Store
 .build/
+
+.vibe/
+
 .opencode/
 openloop-stderr.log
 openloop-stdout.log

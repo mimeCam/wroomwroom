@@ -164,6 +164,10 @@ if [ -d "$HOME/.claude" ]; then
     echo "Checking cc_docker (subscription):"
     openloop_cc_docker "pirate" "ahoy there" "speak like true Jack Sparrow ey" "plan"
 fi
+# if [ -f "$HOME/.vibe/.env" ] || [ -f "./.vibe/.env" ]; then
+#     echo "Checking mv_docker (subscription):"
+#     openloop_mv_docker "pirate" "ahoy there" "speak like true Jack Sparrow ey" "plan"
+# fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open http://localhost:54321/ || true

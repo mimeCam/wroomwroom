@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# ymv_ - shared base for mistral-vibe scripts (ymv, ymvw)
+#
+
+current_dir=$(pwd)
+if [[ "$current_dir" != "$HOME"/* && "$current_dir" != /private/var/folders/* && "$current_dir" != /var/folders/* ]]; then
+    echo "OOPS: Current directory must be at least 1 level deep inside HOME directory or inside a system's temp folder."
+    echo "Current directory: $current_dir"
+    echo "Home directory: $HOME"
+    echo "Exiting now. Execution in root HOME dir is not allowed."
+
+    exit 2
+fi
+
+IMAGE="yolo_devcontainer"
+
+ROOT="$PWD"
+
+# Determine volume mounts based on mode
+VOLUME_MOUNTS=()
+
+if [ -d "$ROOT/.vibe" ]; then
+    VIBE_HOST="$ROOT/.vibe"
+elif [ -d "$HOME/.vibe" ]; then
+    VIBE_HOST="$HOME/.vibe"
+else
+    mkdir -p "$HOME/.vibe"
+    VIBE_HOST="$HOME/.vibe"
+fi
+
+VOLUME_MOUNTS+=(-v "$VIBE_HOST:/home/node/.vibe")
+
+if [ -d "$HOME/Library/Developer/Xcode/DerivedData" ]; then
+    VOLUME_MOUNTS+=(-v "$HOME/Library/Developer/Xcode/DerivedData:$HOME/Library/Developer/Xcode/DerivedData:ro")
+fi
+
+[ -f "$HOME/.gitignore" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitignore:/home/node/.gitignore:ro")
+[ -f "$HOME/.gitconfig" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitconfig:/home/node/.gitconfig:ro")
+
+VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
+
+PRJ="$ROOT"
+
+# Determine vibe command
+if [ -n "$PROMPT" ]; then
+    VIBERUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent auto-approve --output text")
+else
+    VIBERUN=("bash" "-c" "vibe --agent auto-approve")
+fi
+
+docker run --rm -it \
+    --init --pids-limit=500 \
+    -v /etc/localtime:/etc/localtime:ro \
+    -e "PROMPT=$PROMPT" \
+    "${VOLUME_MOUNTS[@]}" \
+    -w "$PRJ" \
+    --name "$CONTAINER_NAME" \
+    $IMAGE "${VIBERUN[@]}"
