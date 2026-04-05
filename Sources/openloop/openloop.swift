@@ -148,6 +148,10 @@ private func checkDuplicateInLoop() async throws -> Bool {
     return false
 }
 
+public func isRunOnceWorkflow(_ w: Workflow) -> Bool {
+    w.everySecs == -1
+}
+
 private func loop() async throws {
     if try await checkDuplicateInLoop() { Foundation.exit(0) }
 
@@ -159,20 +163,29 @@ private func loop() async throws {
 
     var skipped = 0
     for (id, w) in all {
-        guard w.everySecs > 0 else {
-            skipped += 1
-            continue
-        }
+        if isRunOnceWorkflow(w) {
+            if await state.launchedOnce(id) {
+                continue
+            }
+        } else {
+            guard w.everySecs > 0 else {
+                skipped += 1
+                continue
+            }
 
-        if await state.isRunning(id) {
-            continue
-        }
-        let last = await state.lastCompletion(id)
-        guard Int(Date().timeIntervalSince(last)) > w.everySecs else {
-            continue
+            if await state.isRunning(id) {
+                continue
+            }
+            let last = await state.lastCompletion(id)
+            guard Int(Date().timeIntervalSince(last)) > w.everySecs else {
+                continue
+            }
         }
 
         await state.markLaunched(id)
+        if isRunOnceWorkflow(w) {
+            await state.markLaunchedOnce(id)
+        }
         Task.detached {
             defer {
                 Task {
@@ -248,8 +261,17 @@ private final actor State {
         running.count
     }
 
+    func launchedOnce(_ id: String) -> Bool {
+        launchedOnceSet.contains(id)
+    }
+
+    func markLaunchedOnce(_ id: String) {
+        launchedOnceSet.insert(id)
+    }
+
     private var running: Set<String> = []
     private var ts: [String : Date] = [:]
+    private var launchedOnceSet: Set<String> = []
 
 }
 
