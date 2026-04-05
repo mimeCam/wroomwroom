@@ -25,6 +25,10 @@ if [ -z "$API_KEY" ] && [ -n "$API_ENDPOINT" ]; then
     echo "Error: API_KEY is required when API_ENDPOINT is set" >&2; exit 1
 fi
 if [ -n "$API_KEY" ] && [ -n "$API_ENDPOINT" ]; then
+    if [ "$API_KEY" = "🔥🔥🔥" ]; then
+        echo "Error: API_KEY must be changed from placeholder value" >&2
+        exit 1
+    fi
     use_tier=false
 else
     use_tier=true
@@ -177,9 +181,9 @@ fi
 # Build claude command following yolo_claude.sh pattern
 C2=". /home/node/.local/bin/env"
 SKIP_PERMISSIONS_FLAG=""
-if [ "${MODE}" != "plan" ]; then
+# if [ "${MODE}" != "plan" ]; then # it needs to save `~/report.md` in plan mode without asks.
     SKIP_PERMISSIONS_FLAG="--dangerously-skip-permissions"
-fi
+# fi
 MCP_FLAGS=""
 if [ -n "$MCP_CONFIG_PATH" ]; then
     MCP_FLAGS="--mcp-config \"${MCP_CONFIG_PATH}\""
@@ -187,8 +191,10 @@ if [ -n "$MCP_CONFIG_PATH" ]; then
         MCP_FLAGS="$MCP_FLAGS $USE_STRICT_MCP"
     fi
 fi
+
+# --permission-mode \"${MODE}\" \ # cc does magic internally when mode is "plan"
 CLAUDE_CMD="claude ${SKIP_PERMISSIONS_FLAG} \
-    --permission-mode \"${MODE}\" \
+    --permission-mode bypassPermissions \
     --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" \
     --no-session-persistence \
     ${MCP_FLAGS} \
@@ -200,9 +206,9 @@ if [ -n "$SYSTEM_PROMPT" ]; then
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
 fi
 
-if [ "${MODE}" == "plan" ]; then
+# if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/report.md now, even bottom level
     CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; } "
-fi
+# fi
 
 if [ "$use_tier" = true ]; then
     $DOCKER run --rm \
