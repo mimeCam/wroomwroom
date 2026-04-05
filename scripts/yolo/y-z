@@ -31,15 +31,25 @@ unset API_KEY API_ENDPOINT
 export API_KEY="🔥🔥🔥"
 export API_ENDPOINT="https://api.z.ai/api/anthropic"
 
+SUFFIX="-z"
+
+CLAUDE_JSON="$HOME/.claude${SUFFIX}.json"
+CLAUDE_JSON_BK="$HOME/.claude${SUFFIX}.json.backup"
+CLAUDE_DIR="$HOME/.claude${SUFFIX}"
+
+mkdir -p "$CLAUDE_DIR"
+[ ! -f "$CLAUDE_JSON" ] && echo '{}' > "$CLAUDE_JSON"
+[ ! -f "$CLAUDE_JSON_BK" ] && echo '{}' > "$CLAUDE_JSON_BK"
+
 MODEL_ENV_FLAGS=()
 [ -n "$ANTHROPIC_DEFAULT_OPUS_MODEL" ] && MODEL_ENV_FLAGS+=(-e "ANTHROPIC_DEFAULT_OPUS_MODEL=$ANTHROPIC_DEFAULT_OPUS_MODEL")
 [ -n "$ANTHROPIC_DEFAULT_SONNET_MODEL" ] && MODEL_ENV_FLAGS+=(-e "ANTHROPIC_DEFAULT_SONNET_MODEL=$ANTHROPIC_DEFAULT_SONNET_MODEL")
 [ -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" ] && MODEL_ENV_FLAGS+=(-e "ANTHROPIC_DEFAULT_HAIKU_MODEL=$ANTHROPIC_DEFAULT_HAIKU_MODEL")
 [ -n "$CLAUDE_CODE_SUBAGENT_MODEL" ] && MODEL_ENV_FLAGS+=(-e "CLAUDE_CODE_SUBAGENT_MODEL=$CLAUDE_CODE_SUBAGENT_MODEL")
 
-PROMPT_FLAG=""
+CLAUDE_CMD="claude --dangerously-skip-permissions --append-system-prompt \"\$SYSTEM_PROMPT\""
 if [ -n "$PROMPT" ]; then
-	PROMPT_FLAG="-p \"$PROMPT\""
+	CLAUDE_CMD="$CLAUDE_CMD -p \"\$PROMPT\""
 fi
 
 docker run --rm -it \
@@ -50,7 +60,12 @@ docker run --rm -it \
 	-e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
 	-e BASH_DEFAULT_TIMEOUT_MS=20 \
 	"${MODEL_ENV_FLAGS[@]}" \
+	-e "PROMPT=${PROMPT}" \
+	-e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+	-v "$CLAUDE_DIR:/home/node/.claude" \
+	-v "$CLAUDE_JSON:/home/node/.claude.json" \
+	-v "$CLAUDE_JSON_BK:/home/node/.claude.json.backup" \
 	-v "$PWD:$PWD" \
 	-w "$PWD" \
 	--name "$CONTAINER_NAME" \
-	$IMAGE bash -c ". /home/node/.local/bin/env && claude --dangerously-skip-permissions --append-system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"
+	$IMAGE bash -c ". /home/node/.local/bin/env && $CLAUDE_CMD"
