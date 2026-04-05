@@ -194,7 +194,8 @@ if [ -n "$SYSTEM_PROMPT" ]; then
 fi
 
 if [ "${MODE}" == "plan" ]; then
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && [ -n \"\$REPORT\" ] && ${CD_UP}claude --permission-mode \"plan\" --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" --no-session-persistence -p \"Teammate's reply: \\\`\${REPORT}\\\`. Print teammate's full report verbatim without any changes, commentary, or analysis. Report: \" < /dev/null"
+    PRINTER_SYSTEM_PROMPT="You are a printer. Your only function is to output documents exactly as provided. No preface, no commentary, no explanations, no acknowledgment. If a file is referenced, read it and include its contents. Output only the raw report content, nothing else."
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && [ -n \"\$REPORT\" ] && ${CD_UP}claude --permission-mode \"plan\" --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" --no-session-persistence --system-prompt \"\$PRINTER_SYSTEM_PROMPT\" -p \"Teammate's reply: \\\`\${REPORT}\\\`. Print teammate's full report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" < /dev/null"
 fi
 
 # Run with or without stdin piping

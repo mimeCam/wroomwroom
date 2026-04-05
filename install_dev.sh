@@ -161,11 +161,12 @@ echo ""
 echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the project's folder . Control Plane available at http://localhost:54321/"
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
 
+echo ""
 echo "Checking oc_docker:"
-openloop_oc_docker "pirate" "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" "plan"
+openloop_oc_docker pirate "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" plan
 if [ -d "$HOME/.claude" ]; then
     echo "Checking cc_docker (subscription):"
-    openloop_cc_docker "pirate" "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" "plan"
+    openloop_cc_docker pirate "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" plan
 fi
 #
 # vibe disabled - it does not have a convinient way to specify system_prompt + grant permissions to use all installed mcp tools.

@@ -134,7 +134,7 @@ fi
 C2=". /home/node/.local/bin/env"
 
 if [ "${MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text) && ${CD_UP}vibe --prompt \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. Report: \" --agent plan --output text")
+    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text) && ${CD_UP}vibe --prompt \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" --agent plan --output text")
 else
     OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text")
 fi

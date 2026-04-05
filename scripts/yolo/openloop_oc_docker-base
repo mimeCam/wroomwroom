@@ -158,12 +158,16 @@ else
 
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
 fi
+
+if [ "${ORIGINAL_MODE}" == "plan" ]; then
+    prepare_agent "printer" "You are a printer. Your only function is to output documents exactly as provided. No preface, no commentary, no explanations, no acknowledgment. If a file is referenced, read it and include its contents. Output only the raw report content, nothing else."
+fi
 # if [ -n "$MODE" ] && [ "$MODE" == "plan" ]; then
 # else
 # fi
 
 if [ "${ORIGINAL_MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\") && ${CD_UP}opencode run \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. Report: \" --agent plan")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\") && ${CD_UP}opencode run \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" --agent printer")
 elif [ -n "$MODE" ]; then
     OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
 else
