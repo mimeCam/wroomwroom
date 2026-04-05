@@ -511,16 +511,20 @@ private func runGraph(
             res[runItemById(pair.key.id)] = pair.value
         }
 
+        let reportsDir = FilePath(NSTemporaryDirectory())
+            .appending(UUID().uuidString)
+        guard PathIO.createDirectoryIfNotExists(atPath: reportsDir.string) else {
+            throw ValidationError("Could not create tmp _reports folder: \(reportsDir.string)")
+        }
+        defer {
+            _ = PathIO.deleteDirectoryAndItsContents(atPath: reportsDir.string)
+        }
         let context: String?
 
         if tops.contains(from) {
             context = outerContext
-        } else if bottoms.contains(from) {
-            context = contextFromParents(parents)
         } else {
-            context = contextFromParents(parents)
-            //                # Output
-            //                Tell your full response here so that your teammates can continue with the task using your input.
+            context = await contextFromParents(parents, reportsDir: reportsDir)
         }
         let hasContext = context?.notEmpty ?? false
 
@@ -553,7 +557,7 @@ private func runGraph(
             let coreTask: String
             if let task = from.persona?.task, task.notEmpty {
                 coreTask = """
-\(from.persona?.task ?? "")
+\(task)
 
 # Parent task (to infer context from):
 \(ask)
@@ -562,55 +566,33 @@ private func runGraph(
                 coreTask = ask
             }
 
-            let topOrMiddle = """
+            let fakeBottom = from.realId == "_bottom_"
+
+            let prompt = """
 # Core task
 \(coreTask)
 
 # Instructions
-\(levels.count > 1 ? "Work on your core task, not parent task, since you are working within a larger team." : "")
-\(hasContext ?
-            (rw ? "Use reports to help you accomplish your core task." : "Review team reports and reply with your professional analysis incorporating all inputs.")
-: "")
-
-Main project files are located 1 directory level up from here.
-\(rw ? "Current directory contains various guides that should help with the core task.": "Current directory is read-only and contains various guides that should help with the core task.")
-Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a core task.
-"""
-
-
-            let chdirNote: String
-            let fakeBottom = from.realId == "_bottom_"
-            if fakeBottom {
-                chdirNote = ""
-            } else {
-                chdirNote = """
-Main project files are located 1 directory level up from here.
-Current directory is read-only and contains various guides that should help with the task.
-Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a task.
-"""
-            }
-
-            let bottom = """
-# Task
-\(coreTask)
-
-# Instructions
-\(hasContext ? "Use reports to help you accomplish the task." : "")
-
-\(chdirNote)
+\(hasContext 
+    ? (fakeBottom
+        ? "- Read directions provided by your teammates in `_reports` folder"
+        : "- Read directions provided by your teammates in `../_reports` folder")
+    : ""
+)
+\(fakeBottom
+    ? "- begin working on the core task"
+    : "- `cd ..` to project's main folder to begin working on the core task"
+)
+- When finished with the core task save your answer, analysis, or summary to `~/report.md`
 """
 
             let mode: String?
-            let prompt: String
 
             if bottoms.contains(from) {
-                prompt = bottom
                 mode = nil // "auto" // "build"
             } else if from.forceRW {
-                prompt = topOrMiddle
                 mode = nil
             } else {
-                prompt = topOrMiddle
                 mode = "plan"
             }
 
@@ -692,34 +674,45 @@ Familiarize yourself with the guides and then `cd ..` to the project's root fold
 
 }
 
+private func slugify(_ s: String) -> String {
+    s.lowercased()
+        .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { $0.notEmpty }
+        .joined(separator: "-")
+}
 
+private func contextFromParents(
+    _ all: [PreparedRunItem: String],
+    reportsDir: FilePath
+) async -> String? {
+    guard all.notEmpty else { return nil }
 
-
-private func contextFromParents(_ all: [PreparedRunItem: String]) -> String? {
-    all.reduce(into: "") { res, pair in
+    for pair in all {
         let item = pair.key
+        let suffix = Int.random(in: 1...100)
+        let fileName: String
 
         if let p = item.persona {
             if item.name.notEmpty, p.role.notEmpty {
-                res += """
-## Report from \(item.name), \(p.role):
-\(pair.value)
-
-"""
+                fileName = "from-\(slugify(item.name))-\(slugify(p.role))-\(suffix).md"
             } else {
-                res += """
-## Report by \(p.role):
-\(pair.value)
-
-"""
+                fileName = "by-\(slugify(p.role))-\(suffix).md"
             }
-        } else if let _ = item.workflow {
-            res += """
-## Report:
-\(pair.value)
-"""
+        } else if item.workflow != nil {
+            fileName = "\(slugify(item.name))-\(suffix).md"
         } else {
-            fatalError()
+            assertionFailure(); continue
+        }
+
+        let filePath = reportsDir.appending(fileName)
+        guard let data = pair.value.data(using: .utf8) else {
+            assertionFailure(); continue
+        }
+        let f = File(filePath.string)
+        guard await f.write(data) else {
+            assertionFailure(); continue
         }
     }
+
+    return reportsDir.string
 }

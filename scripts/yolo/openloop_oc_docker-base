@@ -61,24 +61,6 @@ if [ -p /dev/stdin ]; then
     YOLO_STDIN=$(cat)
 fi
 
-make_prompt_text() {
-    local PROMPT="$1"
-
-    if [ -n "$YOLO_STDIN" ]; then
-        PROMPT=$(cat <<EOF
-${1}
-
-# Reports
-${YOLO_STDIN}
-EOF
-)
-    fi
-
-    echo "$PROMPT"
-}
-
-PROMPT_TEXT=$(make_prompt_text "$PROMPT")
-
 prepare_agent() {
     #
     # https://opencode.ai/docs/agents#markdown
@@ -145,13 +127,11 @@ fi
 ORIGINAL_MODE="$MODE"
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
-    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
-    CD_UP="cd .. && "
 
     prepare_agent "$PERSONA" "$SYSTEM_PROMPT"
     MODE="$PERSONA"
@@ -159,19 +139,19 @@ else
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
 fi
 
-if [ "${ORIGINAL_MODE}" == "plan" ]; then
-    prepare_agent "printer" "You are a printer. Your only function is to output documents exactly as provided. No preface, no commentary, no explanations, no acknowledgment. If a file is referenced, read it and include its contents. Output only the raw report content, nothing else."
+if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
+    # VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$PRJ/_reports:ro") # docker does not allow
+    mkdir -p $ROOT/_reports
+    VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$ROOT/_reports:ro")
+    YOLO_STDIN=""
 fi
-# if [ -n "$MODE" ] && [ "$MODE" == "plan" ]; then
-# else
-# fi
 
 if [ "${ORIGINAL_MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\") && ${CD_UP}opencode run \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" --agent printer")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT\" --agent \"$MODE\") && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; } ")
 elif [ -n "$MODE" ]; then
-    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT\" --agent \"$MODE\"")
 else
-    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\"")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT\"")
 fi
 
 
@@ -204,7 +184,7 @@ $DOCKER run --rm \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$AUTH_FILE:/home/node/.local/share/opencode/auth.json" \
     -v "$CONFIG_FILE:/home/node/.config/opencode/opencode.json" \
-    -e "PROMPT_TEXT=$PROMPT_TEXT" \
+    -e "PROMPT=$PROMPT" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
     $IMAGE "${OCRUN[@]}"

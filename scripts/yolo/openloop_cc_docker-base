@@ -137,8 +137,6 @@ if [ "$use_tier" = true ]; then
     trap on_exit EXIT
 fi
 
-# No stdin modification - let it flow directly to claude
-
 # Determine volume mounts based on mode
 VOLUME_MOUNTS=()
 
@@ -156,15 +154,24 @@ else
 fi
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
-    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
-    CD_UP="cd .. && "
 
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
+fi
+
+YOLO_STDIN=""
+if [ -p /dev/stdin ]; then
+    YOLO_STDIN=$(cat)
+fi
+if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
+    # VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$PRJ/_reports:ro")
+    mkdir -p $ROOT/_reports
+    VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$ROOT/_reports:ro")
+    YOLO_STDIN=""
 fi
 
 # Build claude command following yolo_claude.sh pattern
@@ -194,84 +201,39 @@ if [ -n "$SYSTEM_PROMPT" ]; then
 fi
 
 if [ "${MODE}" == "plan" ]; then
-    PRINTER_SYSTEM_PROMPT="You are a printer. Your only function is to output documents exactly as provided. No preface, no commentary, no explanations, no acknowledgment. If a file is referenced, read it and include its contents. Output only the raw report content, nothing else."
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && [ -n \"\$REPORT\" ] && ${CD_UP}claude --permission-mode \"plan\" --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" --no-session-persistence --system-prompt \"\$PRINTER_SYSTEM_PROMPT\" -p \"Teammate's reply: \\\`\${REPORT}\\\`. Print teammate's full report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" < /dev/null"
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; } "
 fi
 
-# Run with or without stdin piping
-if [ -p /dev/stdin ]; then
-    #
-    # To test that  `stdin` support works:
-    # >
-    # echo "my name is Anton" | ./openloop_cc_docker "hi, what is my name?
-    # >
-    #./openloop_cc_docker "hi, what is my name?
-    #
-    if [ "$use_tier" = true ]; then
-        cat | $DOCKER run --rm -i \
-            --pids-limit=500 \
-            --init \
-            -e ANTHROPIC_LOG=error \
-            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-            -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
-            -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
-            -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
-            -e BASH_DEFAULT_TIMEOUT_MS=20 \
-            "${MODEL_ENV_FLAGS[@]}" \
-            -e "PROMPT=${PROMPT}" \
-            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
-            "${VOLUME_MOUNTS[@]}" \
-            -w "$PRJ" \
-            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
-    else
-        cat | $DOCKER run --rm -i \
-            --pids-limit=500 \
-            --init \
-            -v /etc/localtime:/etc/localtime:ro \
-            -e ANTHROPIC_LOG=error \
-            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-            -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
-            -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
-            -e BASH_DEFAULT_TIMEOUT_MS=20 \
-            "${MODEL_ENV_FLAGS[@]}" \
-            -e "PROMPT=${PROMPT}" \
-            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
-            "${VOLUME_MOUNTS[@]}" \
-            -w "$PRJ" \
-            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
-    fi
+if [ "$use_tier" = true ]; then
+    $DOCKER run --rm \
+        --pids-limit=500 \
+        --init \
+        -e ANTHROPIC_LOG=error \
+        -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+        -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
+        -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
+        -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
+        -e BASH_DEFAULT_TIMEOUT_MS=20 \
+        "${MODEL_ENV_FLAGS[@]}" \
+        -e "PROMPT=${PROMPT}" \
+        -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+        "${VOLUME_MOUNTS[@]}" \
+        -w "$PRJ" \
+        $IMAGE bash -c "$C2 && $CLAUDE_CMD"
 else
-    if [ "$use_tier" = true ]; then
-        $DOCKER run --rm \
-            --pids-limit=500 \
-            --init \
-            -e ANTHROPIC_LOG=error \
-            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-            -v "$CLAUDE_SBX/.claude:/home/node/.claude" \
-            -v "$CLAUDE_SBX/.claude.json:/home/node/.claude.json" \
-            -v "$CLAUDE_SBX/.claude.json.backup:/home/node/.claude.json.backup" \
-            -e BASH_DEFAULT_TIMEOUT_MS=20 \
-            "${MODEL_ENV_FLAGS[@]}" \
-            -e "PROMPT=${PROMPT}" \
-            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
-            "${VOLUME_MOUNTS[@]}" \
-            -w "$PRJ" \
-            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
-    else
-        $DOCKER run --rm \
-            --pids-limit=500 \
-            --init \
-            -v /etc/localtime:/etc/localtime:ro \
-            -e ANTHROPIC_LOG=error \
-            -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-            -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
-            -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
-            -e BASH_DEFAULT_TIMEOUT_MS=20 \
-            "${MODEL_ENV_FLAGS[@]}" \
-            -e "PROMPT=${PROMPT}" \
-            -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
-            "${VOLUME_MOUNTS[@]}" \
-            -w "$PRJ" \
-            $IMAGE bash -c "$C2 && $CLAUDE_CMD"
-    fi
+    $DOCKER run --rm \
+        --pids-limit=500 \
+        --init \
+        -v /etc/localtime:/etc/localtime:ro \
+        -e ANTHROPIC_LOG=error \
+        -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+        -e "ANTHROPIC_BASE_URL=${API_ENDPOINT}" \
+        -e "ANTHROPIC_AUTH_TOKEN=${API_KEY}" \
+        -e BASH_DEFAULT_TIMEOUT_MS=20 \
+        "${MODEL_ENV_FLAGS[@]}" \
+        -e "PROMPT=${PROMPT}" \
+        -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
+        "${VOLUME_MOUNTS[@]}" \
+        -w "$PRJ" \
+        $IMAGE bash -c "$C2 && $CLAUDE_CMD"
 fi

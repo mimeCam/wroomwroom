@@ -61,25 +61,6 @@ if [ -p /dev/stdin ]; then
     YOLO_STDIN=$(cat)
 fi
 
-make_prompt_text() {
-    local PROMPT="$1"
-
-    if [ -n "$YOLO_STDIN" ]; then
-        PROMPT=$(cat <<EOF
-${1}
-
-# Reports
-${YOLO_STDIN}
-EOF
-)
-    fi
-
-    echo "$PROMPT"
-}
-
-PROMPT_TEXT=$(make_prompt_text "$PROMPT")
-
-
 # Always use $HOME/.vibe for config
 mkdir -p "$HOME/.vibe"
 
@@ -119,30 +100,35 @@ else
 fi
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
-    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
-    CD_UP="cd .. && "
 
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
+fi
+
+if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
+    # VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$PRJ/_reports:ro")
+    mkdir -p $ROOT/_reports
+    VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$ROOT/_reports:ro")
+    YOLO_STDIN=""
 fi
 
 # Source environment setup
 C2=". /home/node/.local/bin/env"
 
 if [ "${MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text) && ${CD_UP}vibe --prompt \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. If the report mentions it was saved to file(s), read those file(s) and include their contents. Report: \" --agent plan --output text")
+    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; }")
 else
-    OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text")
+    OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 fi
 
 $DOCKER run --rm \
     --init --pids-limit=500 \
     -v /etc/localtime:/etc/localtime:ro \
-    -e "PROMPT_TEXT=${PROMPT_TEXT}" \
+    -e "PROMPT=${PROMPT}" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
     $IMAGE "${OCRUN[@]}"
