@@ -722,6 +722,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function formatEverySecsHint(secs) {
+        if (secs === -1) return 'startup — runs once when service starts or resumes (after reboot, reinstall, or update)';
         if (secs === 0) return 'manual — never repeats';
         if (secs === 1) return 'continuous loop';
         if (secs < 60) return `every ${secs} seconds`;
@@ -1713,12 +1714,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="wf-body">
                         <div class="wf-schedule-field">
                             <label>Repeat every</label>
-                            <input type="text" class="wf-schedule-input" data-field="every_secs" pattern="[0-9]*" inputmode="numeric" maxlength="7" value="${workflow.every_secs || 0}">
+                            <input type="text" class="wf-schedule-input" data-field="every_secs" pattern="[0-9\-]*" inputmode="numeric" maxlength="7" value="${workflow.every_secs || 0}">
                             <span class="wf-schedule-unit">seconds</span>
                             <span class="info-icon" data-doc="workflow-schedule" title="Learn about scheduling">ⓘ</span>
                             <span class="wf-schedule-hint">(${scheduleHint})</span>
                         </div>
                         <div class="wf-schedule-presets">
+                            <button type="button" class="preset-btn" data-secs="-1">startup</button>
                             <button type="button" class="preset-btn" data-secs="0">manual</button>
                             <button type="button" class="preset-btn" data-secs="600">10m</button>
                             <button type="button" class="preset-btn" data-secs="3600">1h</button>
@@ -2441,12 +2443,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="wf-schedule-field">
                         <label>Repeat every</label>
-                        <input type="text" class="wf-schedule-input creator-field" data-field="every_secs" pattern="[0-9]*" inputmode="numeric" maxlength="7" value="300">
+                        <input type="text" class="wf-schedule-input creator-field" data-field="every_secs" pattern="[0-9\-]*" inputmode="numeric" maxlength="7" value="0">
                         <span class="wf-schedule-unit">seconds</span>
                         <span class="info-icon" data-doc="workflow-schedule" title="Learn about scheduling">ⓘ</span>
-                        <span class="wf-schedule-hint">(every 5 minutes)</span>
+                        <span class="wf-schedule-hint">(manual — never repeats)</span>
                     </div>
                     <div class="wf-schedule-presets">
+                        <button type="button" class="preset-btn" data-secs="-1">startup</button>
                         <button type="button" class="preset-btn" data-secs="0">manual</button>
                         <button type="button" class="preset-btn" data-secs="600">10m</button>
                         <button type="button" class="preset-btn" data-secs="3600">1h</button>

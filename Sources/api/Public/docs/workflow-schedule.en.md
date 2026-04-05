@@ -6,6 +6,7 @@ The `every_secs` field defines the minimum time between workflow runs.
 
 | Value | Behavior |
 |-------|----------|
+| **-1** | Startup — runs once when openloop service starts or resumes, never repeats. This triggers automatically after OS system reboot, or when reinstalling/updating openloop to a newer version. |
 | **0** | Manual — workflow runs once when triggered, never repeats |
 | **1** | Continuous — will schedule next run immediately after workflow finished |
 | **60** | Every minute |
@@ -16,6 +17,7 @@ The `every_secs` field defines the minimum time between workflow runs.
 
 ## When to use what
 
+- **-1 (Startup)**: Initialization tasks, bootstrap jobs, setup checks that should run once when openloop starts or resumes — typically after an OS system reboot, or when reinstalling/updating openloop to a newer version
 - **0 (Manual)**: One-off analyses, on-demand reports, workflows you trigger manually
 - **1 (Continuous)**: Real-time monitoring, event-driven processing, continuous integration
 - **60-300**: Frequent checks (PR monitoring, build status, service health)
