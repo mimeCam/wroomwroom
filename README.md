@@ -27,7 +27,7 @@ Yes you can rent $5/mo VPS and run AI agents 24/7 with a web-based flight contro
 
 Clone, run:
 ```bash
-./install_dev.sh
+source install.sh
 ```
 
 

@@ -156,11 +156,13 @@ else
 fi
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
+    CD_UP="cd .. && "
 
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
 fi
@@ -189,6 +191,10 @@ CLAUDE_CMD="claude ${SKIP_PERMISSIONS_FLAG} \
 if [ -n "$SYSTEM_PROMPT" ]; then
     CLAUDE_CMD="$CLAUDE_CMD --system-prompt \"\$SYSTEM_PROMPT\""
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
+fi
+
+if [ "${MODE}" == "plan" ]; then
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && [ -n \"\$REPORT\" ] && ${CD_UP}claude --permission-mode \"plan\" --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" --no-session-persistence -p \"Teammate's reply: \\\`\${REPORT}\\\`. Print teammate's full report verbatim without any changes, commentary, or analysis. Report: \" < /dev/null"
 fi
 
 # Run with or without stdin piping

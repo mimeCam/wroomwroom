@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let workflowCache = {};
     let instanceStateCache = {};
     let currentInlineEditor = null;
+    let savedInlineEditor = null;
     let expandedInstances = new Set();
     let instancePersonas = {};
     let instanceWorkflows = {};
@@ -484,6 +485,7 @@ document.addEventListener('DOMContentLoaded', function() {
         selector.innerHTML = selectorHtml;
         content.appendChild(selector);
 
+        savedInlineEditor = currentInlineEditor;
         currentInlineEditor = selector;
 
         const closeBtn = selector.querySelector('.persona-selector-close-btn');
@@ -547,7 +549,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function closePersonaSelector() {
         if (currentInlineEditor && currentInlineEditor.classList.contains('persona-selector-wrapper')) {
             currentInlineEditor.remove();
-            currentInlineEditor = null;
+            currentInlineEditor = savedInlineEditor;
+            savedInlineEditor = null;
         }
     }
 
@@ -719,6 +722,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    function parsePersonaRef(input) {
+        if (input.startsWith(':')) {
+            return { id: input, isRW: false };
+        }
+        if (input.endsWith(':rw') && input.length > 3) {
+            return { id: input.slice(0, -3), isRW: true };
+        }
+        return { id: input, isRW: false };
     }
 
     function formatEverySecsHint(secs) {
@@ -1192,12 +1205,31 @@ document.addEventListener('DOMContentLoaded', function() {
         throw new Error('Content not found');
     }
 
-    async function openHelpPanel(fileName) {
+    async function openHelpPanel(fileName, scrollToHeading) {
         currentHelpDoc = fileName;
         try {
             const mdContent = await fetchMarkdown(fileName);
-            document.getElementById('help-panel-content').innerHTML = marked.parse(mdContent);
-            document.getElementById('help-panel-content').scrollTop = 0;
+            const panelContent = document.getElementById('help-panel-content');
+            panelContent.innerHTML = marked.parse(mdContent);
+
+            if (scrollToHeading) {
+                requestAnimationFrame(() => {
+                    const headings = panelContent.querySelectorAll('h1, h2, h3');
+                    for (const h of headings) {
+                        if (h.textContent.trim() === scrollToHeading) {
+                            h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            h.style.transition = 'background 0.8s ease';
+                            h.style.background = 'rgba(52, 199, 89, 0.08)';
+                            h.style.borderRadius = '6px';
+                            h.style.padding = '4px 8px';
+                            setTimeout(() => { h.style.background = 'transparent'; }, 1500);
+                            break;
+                        }
+                    }
+                });
+            } else {
+                panelContent.scrollTop = 0;
+            }
             document.getElementById('help-panel-content').onclick = (e) => {
                 const link = e.target.closest('a');
                 if (!link) return;
@@ -1925,23 +1957,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const showReorder = levels.length >= 3;
+        const isBottomLevel = (idx) => idx === levels.length - 1;
 
         return levels.map((level, levelIndex) => {
             const slotsHtml = level.map((entryId, slotIndex) => {
-                const persona = personas.find(p => p.id === entryId);
-                let displayName = persona ? persona.name : entryId;
+                const ref = parsePersonaRef(entryId);
+                const persona = personas.find(p => p.id === ref.id);
+                let displayName = persona ? persona.name : ref.id;
                 let slotClass = 'wf-slot filled';
 
-                if (!persona && entryId.startsWith(':')) {
-                    const wfId = entryId.substring(1);
+                let isWorkflowRef = false;
+                if (!persona && ref.id.startsWith(':')) {
+                    const wfId = ref.id.substring(1);
                     const wf = (workflows || []).find(w => w.id === wfId);
-                    displayName = wf ? wf.name : entryId;
+                    displayName = wf ? wf.name : ref.id;
                     slotClass += ' wf-workflow-ref';
+                    isWorkflowRef = true;
+                }
+
+                const isSolo = level.length === 1;
+                const isBottom = isBottomLevel(levelIndex);
+                const showToggle = !isWorkflowRef && isSolo && !isBottom;
+
+                let toggleHtml = '';
+                if (showToggle) {
+                    const rwActive = ref.isRW;
+                    toggleHtml = `
+                        <div class="wf-mode-toggle" role="radiogroup" aria-label="Execution mode for ${escapeHtml(ref.id)}">
+                            <button class="wf-mode-opt${!rwActive ? ' active' : ''}" data-mode="ro" role="radio" aria-checked="${!rwActive}" tabindex="0">ro</button>
+                            <button class="wf-mode-opt${rwActive ? ' active active-rw' : ''}" data-mode="rw" role="radio" aria-checked="${rwActive}" tabindex="0">rw</button>
+                        </div>
+                    `;
                 }
 
                 return `
-                    <div class="${slotClass}" data-level="${levelIndex}" data-slot="${slotIndex}" data-persona-id="${entryId}">
+                    <div class="${slotClass}" data-level="${levelIndex}" data-slot="${slotIndex}" data-persona-id="${escapeHtml(entryId)}">
                         <span class="wf-slot-name">${escapeHtml(displayName)}</span>
+                        ${toggleHtml}
                         <button class="wf-slot-remove" title="Remove">×</button>
                     </div>
                 `;
@@ -1955,6 +2007,13 @@ document.addEventListener('DOMContentLoaded', function() {
             ` : '';
 
             const dragHandle = showReorder ? '<span class="wf-level-drag-handle" title="Drag to reorder">⠿</span>' : '';
+
+            const readonlyFooter = level.length >= 2 ? `
+                    <div class="wf-level-readonly-footer" role="status">
+                        <span class="wf-level-readonly-text">All read-only</span>
+                        <span class="info-icon wf-level-readonly-info" data-doc="workflow" data-section="Multi-Persona Levels Run in Read-Only Mode" title="Learn why this level runs in read-only mode" tabindex="0" aria-label="Learn why this level runs in read-only mode">ⓘ</span>
+                    </div>
+                ` : '';
 
             return `
                 <div class="wf-level${showReorder ? ' wf-level-reorderable' : ''}" data-level="${levelIndex}" draggable="${showReorder ? 'true' : 'false'}">
@@ -1970,6 +2029,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     ${reorderBtns}
+                    ${readonlyFooter}
                 </div>
             `;
         }).join('');
@@ -2020,6 +2080,34 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         levelsContainer.addEventListener('click', (e) => {
+            const readonlyInfo = e.target.closest('.wf-level-readonly-info');
+            if (readonlyInfo) {
+                e.stopPropagation();
+                openHelpPanel(readonlyInfo.dataset.doc, readonlyInfo.dataset.section);
+                return;
+            }
+
+            const modeBtn = e.target.closest('.wf-mode-opt');
+            if (modeBtn) {
+                e.stopPropagation();
+                const slot = modeBtn.closest('.wf-slot');
+                const levelIndex = parseInt(slot.dataset.level);
+                const slotIndex = parseInt(slot.dataset.slot);
+                const currentId = slot.dataset.personaId;
+                const ref = parsePersonaRef(currentId);
+                const newMode = modeBtn.dataset.mode;
+
+                const levels = getLevelsFromEditor(editor);
+                if (newMode === 'rw') {
+                    levels[levelIndex][slotIndex] = ref.id + ':rw';
+                } else {
+                    levels[levelIndex][slotIndex] = ref.id;
+                }
+                refreshLevelsUI(editor, levels, personas);
+                saveWorkflowLevels(editor, instancePath, workflowId, levels);
+                return;
+            }
+
             if (e.target.classList.contains('wf-slot-remove')) {
                 const slot = e.target.closest('.wf-slot');
                 const levelIndex = parseInt(slot.dataset.level);
@@ -2157,11 +2245,18 @@ document.addEventListener('DOMContentLoaded', function() {
         while (levels.length <= levelIndex) {
             levels.push([]);
         }
-        
+
         if (slotIndex >= levels[levelIndex].length) {
             levels[levelIndex].push(personaId);
         } else {
             levels[levelIndex][slotIndex] = personaId;
+        }
+
+        if (levels[levelIndex].length > 1) {
+            levels[levelIndex] = levels[levelIndex].map(entry => {
+                const ref = parsePersonaRef(entry);
+                return ref.id;
+            });
         }
 
         await saveWorkflowLevels(editor, instancePath, workflowId, levels);

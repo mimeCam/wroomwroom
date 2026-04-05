@@ -75,4 +75,14 @@ Les workflows sont le pont entre "comment notre équipe fonctionne vraiment" et 
 
 ## Niveaux et Isolation
 
-L'information est transmise du niveau supérieur au suivant. Il peut y avoir un ou plusieurs personas sur chaque niveau. Les personas du même niveau ne coopèrent pas—ils ne voient que les informations contextuelles du niveau supérieur et la demande principale que vous (utilisateur) avez spécifiée. 
+L'information est transmise du niveau supérieur au suivant. Il peut y avoir un ou plusieurs personas sur chaque niveau. Les personas du même niveau ne coopèrent pas—ils ne voient que les informations contextuelles du niveau supérieur et la demande principale que vous (utilisateur) avez spécifiée.
+
+## Les Niveaux Multi-Personas S'Exécutent en Mode Lecture Seule
+
+Lorsqu'un niveau contient **2 personas ou plus**, tous les personas de ce niveau s'exécutent en **mode lecture seule (RO)**. Ils opèrent dans une capacité de *rapport, recherche et planification* — analysant, synthétisant et produisant des rapports sans apporter de modifications au codebase ou aux fichiers du projet.
+
+**Pourquoi ?** Plusieurs personas s'exécutant simultanément en mode lecture-écriture créeraient des conflits. Au lieu de cela, ils collaborent en produisant des rapports et des recommandations individuels.
+
+Le niveau suivant — s'il contient un **seul persona** — peut s'exécuter en **mode lecture-écriture (RW)**. Ce persona reçoit la sortie collective des recherches et rapports du niveau précédent, puis agit dessus avec un accès en écriture complet.
+
+Cette cascade RO → RW assure une exécution propre et sans conflit : **plusieurs espris analysent, puis une seule main agit.**

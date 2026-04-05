@@ -142,12 +142,16 @@ else
     VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
 fi
 
+ORIGINAL_MODE="$MODE"
+
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
+    CD_UP="cd .. && "
 
     prepare_agent "$PERSONA" "$SYSTEM_PROMPT"
     MODE="$PERSONA"
@@ -158,7 +162,9 @@ fi
 # else
 # fi
 
-if [ -n "$MODE" ]; then
+if [ "${ORIGINAL_MODE}" == "plan" ]; then
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\") && ${CD_UP}opencode run \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. Report: \" --agent plan")
+elif [ -n "$MODE" ]; then
     OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\" --agent \"$MODE\"")
 else
     OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT_TEXT\"")

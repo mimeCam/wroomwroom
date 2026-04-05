@@ -162,10 +162,10 @@ echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the 
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
 
 echo "Checking oc_docker:"
-openloop_oc_docker "pirate" "howdy there" "speak like true Jack Sparrow ey" "plan"
+openloop_oc_docker "pirate" "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" "plan"
 if [ -d "$HOME/.claude" ]; then
     echo "Checking cc_docker (subscription):"
-    openloop_cc_docker "pirate" "ahoy there" "speak like true Jack Sparrow ey" "plan"
+    openloop_cc_docker "pirate" "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" "plan"
 fi
 #
 # vibe disabled - it does not have a convinient way to specify system_prompt + grant permissions to use all installed mcp tools.
@@ -181,4 +181,14 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     command -v xdg-open > /dev/null 2>&1 && xdg-open http://localhost:54321/ || true
 fi
 
+echo ""
+echo "Enabled services:"
+echo "systemctl --user list-units --type=service"
+echo "All user service unit files (including inactive/enabled):"
+echo "systemctl --user list-unit-files --type=service"
+
+echo ""
+echo "Run 'ya hi' to verify that claude-code is authenticated (subscription)"
+
+echo ""
 echo "Cha-ching! 🪽 Installation complete 🪽. See http://localhost:54321/"

@@ -119,11 +119,13 @@ else
 fi
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
+    CD_UP=""
     PRJ="$ROOT"
 
     VOLUME_MOUNTS+=(--tmpfs "$ROOT/openloop:ro")
 else
     PRJ="$ROOT/openloop"
+    CD_UP="cd .. && "
 
     VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
 fi
@@ -131,7 +133,11 @@ fi
 # Source environment setup
 C2=". /home/node/.local/bin/env"
 
-OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text")
+if [ "${MODE}" == "plan" ]; then
+    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text) && ${CD_UP}vibe --prompt \"Teammate's reply: \\\`\${REPORT}\\\`. Output teammate's report verbatim without any changes, commentary, or analysis. Report: \" --agent plan --output text")
+else
+    OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT_TEXT\" --agent $MODE --output text")
+fi
 
 $DOCKER run --rm \
     --init --pids-limit=500 \

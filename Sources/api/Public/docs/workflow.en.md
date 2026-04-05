@@ -75,4 +75,14 @@ Workflows are the bridge between "how our team actually works" and "automated ex
 
 ## Levels & Isolation
 
-The information passed down from upper level to the next. There can be 1 or more personas on each level. Personas from the same level do not cooperate - they only see the context information from the level above and the main ask that you (user) specified. 
+The information passed down from upper level to the next. There can be 1 or more personas on each level. Personas from the same level do not cooperate - they only see the context information from the level above and the main ask that you (user) specified.
+
+## Multi-Persona Levels Run in Read-Only Mode
+
+When a level contains **2 or more personas**, all personas in that level execute in **read-only (RO) mode**. They operate in a *reporting, research, and planning* capacity — analyzing, synthesizing, and producing reports without making changes to the codebase or project files.
+
+**Why?** Multiple personas running in read-write mode simultaneously would create conflicting changes. Instead, they collaborate by producing individual reports and recommendations.
+
+The next level — if it contains a **single persona** — can run in **read-write (RW) mode**. That persona receives the collective output from the previous level's research and reports, then acts on it with full write access.
+
+This RO → RW cascade ensures clean, conflict-free execution: **many minds analyze, then one hand acts.**

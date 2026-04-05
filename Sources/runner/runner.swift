@@ -195,10 +195,10 @@ private func runWorkflow(
                 role: "",
                 about: "",
                 task: "",
-                //        folder: Paths.curDir.string,
                 agent: nil
             ),
-            workflow: nil
+            workflow: nil,
+            forceRW: true
         )
         runPersonas.append(
             [bottom]
@@ -234,6 +234,7 @@ private struct LevelRunItemAndId {
     let id: String
     let p: Persona?
     let w: Workflow?
+    let isRW: Bool
 }
 
 private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]]? {
@@ -266,16 +267,17 @@ private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]
                 }
 
                 levelRes.append(
-                    .init(id: id, p: nil, w: w)
+                    .init(id: id, p: nil, w: w, isRW: false)
                 )
             } else {
-                let p = try await fetchPerson(id)
+                let ref = parsePersonaRef(id)
+                let p = try await fetchPerson(ref.id)
                 guard let p else {
-                    throw ValidationError("Person does not exist: \(id)")
+                    throw ValidationError("Person does not exist: \(ref.id)")
                 }
 
                 levelRes.append(
-                    .init(id: id, p: p, w: nil)
+                    .init(id: ref.id, p: p, w: nil, isRW: ref.isRW)
                 )
             }
         }
@@ -285,6 +287,27 @@ private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]
 
     return res
 }
+
+private struct PersonaRef: Sendable {
+    public let id: String
+    public let isRW: Bool
+
+    public init(id: String, isRW: Bool) {
+        self.id = id
+        self.isRW = isRW
+    }
+}
+
+private func parsePersonaRef(_ input: String) -> PersonaRef {
+    if input.hasPrefix(":") {
+        return PersonaRef(id: input, isRW: false)
+    }
+    if input.hasSuffix(":rw") && input.count > 3 {
+        return PersonaRef(id: String(input.dropLast(3)), isRW: true)
+    }
+    return PersonaRef(id: input, isRW: false)
+}
+
 
 //private func cleanUpTempFolders(for levels: [[PreparedPersona]]) {
 //    levels.forEach { personas in
@@ -380,8 +403,10 @@ private func preparePersonas(
     }
 
     return levels.enumerated().map { li, personasAndIds in
-        personasAndIds.enumerated().map { pi, personaAndId in
+        let soloOnLevel = personasAndIds.count == 1
+        return personasAndIds.enumerated().map { pi, personaAndId in
             if let p = personaAndId.p {
+                let effectiveRW = personaAndId.isRW && soloOnLevel
                 return PreparedRunItem(
                     id: UUID().uuidString, realId: personaAndId.id,
                     name: p.name,
@@ -389,10 +414,10 @@ private func preparePersonas(
                         role: p.role,
                         about: p.about,
                         task: p.task,
-                        //                folder: folders[li][pi],
                         agent: p.agent == nil ? nil : ("openloop_" + p.agent!)
                     ),
-                    workflow: nil
+                    workflow: nil,
+                    forceRW: effectiveRW
                 )
             } else if let w = personaAndId.w {
                 return PreparedRunItem(
@@ -401,7 +426,8 @@ private func preparePersonas(
                     persona: nil,
                     workflow: PreparedWorkflow(
                         agent: w.agent
-                    )
+                    ),
+                    forceRW: false
                 )
             } else {
                 fatalError()
@@ -417,6 +443,7 @@ private struct PreparedRunItem: Hashable, Identifiable {
 
     let persona: PreparedPersona?
     let workflow: PreparedWorkflow?
+    let forceRW: Bool
 }
 
 private struct PreparedPersona: Hashable {
@@ -521,13 +548,14 @@ private func runGraph(
             //
             assert(from.persona != nil)
 
+            let rw = bottoms.contains(from) || from.forceRW
+
             let coreTask: String
             if let task = from.persona?.task, task.notEmpty {
                 coreTask = """
-Your Core task:
 \(from.persona?.task ?? "")
 
-Infer context from the parent task:
+# Parent task (to infer context from):
 \(ask)
 """
             } else {
@@ -535,17 +563,18 @@ Infer context from the parent task:
             }
 
             let topOrMiddle = """
-# Task
+# Core task
 \(coreTask)
 
-\(levels.count > 1 ? "Work on your core task only and not parent task since you are working within a larger team." : "")
-\(hasContext ? "Review team reports, provide your professional analysis, and create an updated comprehensive report incorporating all inputs." : "")
+# Instructions
+\(levels.count > 1 ? "Work on your core task, not parent task, since you are working within a larger team." : "")
+\(hasContext ?
+            (rw ? "Use reports to help you accomplish your core task." : "Review team reports and reply with your professional analysis incorporating all inputs.")
+: "")
 
-\(levels.count > 1 ? "Explain your suggestions directly in chat without saving findings to a file." : "")
-
-FYI: Main project files are located 1 directory level up from here.
-Current directory is read-only and contains various guides that should help with the task.
-Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a task.
+Main project files are located 1 directory level up from here.
+\(rw ? "Current directory contains various guides that should help with the core task.": "Current directory is read-only and contains various guides that should help with the core task.")
+Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a core task.
 """
 
 
@@ -555,7 +584,7 @@ Familiarize yourself with the guides and then `cd ..` to the project's root fold
                 chdirNote = ""
             } else {
                 chdirNote = """
-FYI: Main project files are located 1 directory level up from here.
+Main project files are located 1 directory level up from here.
 Current directory is read-only and contains various guides that should help with the task.
 Familiarize yourself with the guides and then `cd ..` to the project's root folder to begin working on a task.
 """
@@ -565,7 +594,8 @@ Familiarize yourself with the guides and then `cd ..` to the project's root fold
 # Task
 \(coreTask)
 
-\(hasContext ? "# Reports\nUse reports to help you accomplish the task correctly." : "")
+# Instructions
+\(hasContext ? "Use reports to help you accomplish the task." : "")
 
 \(chdirNote)
 """
@@ -576,6 +606,9 @@ Familiarize yourself with the guides and then `cd ..` to the project's root fold
             if bottoms.contains(from) {
                 prompt = bottom
                 mode = nil // "auto" // "build"
+            } else if from.forceRW {
+                prompt = topOrMiddle
+                mode = nil
             } else {
                 prompt = topOrMiddle
                 mode = "plan"
