@@ -178,7 +178,7 @@ private func loop() async throws {
             if await state.isRunning(id) {
                 continue
             }
-            let last = await state.lastCompletion(id)
+            let last = await state.lastLaunch(id)
             guard Int(Date().timeIntervalSince(last)) > w.everySecs else {
                 continue
             }
@@ -245,18 +245,17 @@ private final actor State {
         running.contains(id)
     }
 
-    func lastCompletion(_ id: String) -> Date {
+    func lastLaunch(_ id: String) -> Date {
         ts[id] ?? Date.distantPast
     }
 
     func markLaunched(_ id: String) {
         running.insert(id)
-//        ts[id] = Date()
+        ts[id] = Date()
     }
 
     func markCompleted(_ id: String) {
         running.remove(id)
-        ts[id] = Date()
     }
 
     func countRunnint() -> Int {

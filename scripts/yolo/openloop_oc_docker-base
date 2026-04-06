@@ -147,7 +147,7 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
 fi
 
 if [ "${ORIGINAL_MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT\" --agent \"$MODE\") && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; } ")
+    OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$(opencode run \"\$PROMPT\" --agent \"$MODE\") && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } ")
 elif [ -n "$MODE" ]; then
     OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; opencode run \"\$PROMPT\" --agent \"$MODE\"")
 else

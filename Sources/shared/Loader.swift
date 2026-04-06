@@ -44,10 +44,15 @@ public extension FileLoader {
     }
 
     static func saveRunLog(_ log: RunLog) async throws {
-        do {
-            try LogManager.saveLog(log)
-        } catch {
-            assertionFailure(#function)
+        let maxRetries = 3
+        for attempt in 1...maxRetries {
+            do {
+                try LogManager.saveLog(log)
+                return
+            } catch {
+                if attempt == maxRetries { throw error }
+                try await Task.sleep(for: .milliseconds(100 * attempt))
+            }
         }
     }
 

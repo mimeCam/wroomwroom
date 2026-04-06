@@ -29,9 +29,12 @@ struct runner: ParsableCommand {
 
         Task {
             do {
-                try await start(
+                try LogManager.createTables(at: Paths.curDir.string)
+
+                _ = try await start(
                     workflow, ask: ask,
-                    context: try? readPipedStdin()
+                    context: try? readPipedStdin(),
+                    contextParents: []
                 )
             } catch {
                 assertionFailure("ERR. \(error.localizedDescription)")
@@ -70,7 +73,7 @@ private func readPipedStdin() throws -> String? {
 
 private func start(
     _ workflow: String, ask: String?,
-    context: String?
+    context: String?, contextParents: [RunLog.Message.Parent]
 ) async throws -> String {
     let w = try await FileLoader.loadWorkflowById(workflow)
     guard let w else {
@@ -88,10 +91,11 @@ private func start(
 
     let tb = TimedBenchmark()
 
-    func saveLog(_ res: String) async throws {
+    func saveLog(
+        _ m: WorkflowRunLog.Message
+    ) async throws {
         let elapsed = tb.intervalSinceInitialized
-
-        let success = res.notEmpty
+        let success = m.output.notEmpty
 
         let log = WorkflowRunLog(
             success: success,
@@ -102,12 +106,8 @@ private func start(
             workflowId: workflow,
             personaId: nil,
 
-
             agent: w.agent,
-            msg: .init(
-                input: validAsk, output: res,
-                parents: []
-            )
+            msg: m
         )
         try await FileLoader.saveRunLog(log)
     }
@@ -122,12 +122,26 @@ private func start(
 
         print(res) // MUST print to stdout so that openloop captures as a result.
 
-        try await saveLog(res)
+        try await saveLog(
+            WorkflowRunLog.Message(
+                input: validAsk,
+                output: res,
+                parents: contextParents
+            )
+        )
+
+
     } catch {
         let msg = (error as? ValidationError)?.message ?? error.localizedDescription
 
         log.err(msg)
-        try? await saveLog("ERR. \(msg)")
+        try? await saveLog(
+            WorkflowRunLog.Message(
+                input: validAsk,
+                output: "ERR. \(msg)",
+                parents: contextParents
+            )
+        )
 
         runner.exit(withError: error)
     }
@@ -541,7 +555,12 @@ private func runGraph(
             //
             res = try await start(
                 innerWorkflowId, ask: ask,
-                context: context
+                context: context,
+                contextParents: parents.map { p, msg in
+                    WorkflowRunLog.Message.Parent(
+                        id: p.realId, text: msg
+                    )
+                }
             )
             let success = res.notEmpty
 
@@ -561,7 +580,7 @@ private func runGraph(
                 coreTask = """
 \(task)
 
-# Project Vision (read-only context — do not act on this)
+# Project Vision \(rw ? "" : "(read-only context — do not act on this)") 
 \(ask)
 """
             } else {
@@ -586,8 +605,8 @@ private func runGraph(
     : "- `cd ..` to the project root folder to begin the task, applying knowledge from guides in this folder"
 )
 \(hasContext
-    ? "- When done, save your findings to `~/report.md`. Credit teammates for their input"
-    : "- When done, save your findings to `~/report.md`"
+    ? "- When done, save your findings to `~/_report.md`. Credit teammates for their input"
+    : "- When done, save your findings to `~/_report.md`"
 )
 """
 

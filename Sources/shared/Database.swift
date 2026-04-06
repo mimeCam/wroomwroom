@@ -12,7 +12,20 @@ private let log = PrintLog(module: "Database")
 public struct LogManager {
 
     private static func getConnection(_ dbPath: String) throws -> Connection {
-        return try Connection(dbPath)
+        let db = try Connection(dbPath)
+        db.busyTimeout = 3
+        try db.execute("PRAGMA journal_mode=WAL;")
+        try db.execute("PRAGMA synchronous=NORMAL;")
+        return db
+    }
+
+    public static func createTables(at instancePath: String) throws {
+        let dbPath = FilePath(instancePath)
+            .appending("openloop")
+            .appending("logs.db")
+            .string
+        let db = try getConnection(dbPath)
+        try createTables(on: db)
     }
 
     private static func createTables(on db: Connection) throws {
@@ -81,69 +94,68 @@ public struct LogManager {
         let db = try getConnection(dbPath)
         log.info("Got connection")
 
-        try createTables(on: db)
-        log.info("Tables created/verified")
-
-        log.info("Inserting message into messages table")
-        try db.run(
-            "INSERT INTO messages (log_id, input, output) VALUES (?, ?, ?);",
-            runLog.workflowId,
-            runLog.msg.input,
-            runLog.msg.output
-        )
-        let messageId = db.lastInsertRowid
-        log.info("Message inserted with messageId: \(messageId)")
-
-        log.info("Inserting \(runLog.msg.parents.count) parents")
-        for parent in runLog.msg.parents {
+        try db.transaction {
+            log.info("Inserting message into messages table")
             try db.run(
-                "INSERT INTO parents (message_id, parent_id, text) VALUES (?, ?, ?);",
-                messageId,
-                parent.id,
-                parent.text
-            )
-        }
-        log.info("Parents inserted")
-
-        log.info("Inserting log into logs table")
-        let logId = UUID().uuidString
-        if let personaId = runLog.personaId {
-            try db.run(
-                """
-                INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                logId,
-                runLog.success ? 1 : 0,
-                runLog.took,
-                runLog.startedAt,
-                runLog.endedAt,
+                "INSERT INTO messages (log_id, input, output) VALUES (?, ?, ?);",
                 runLog.workflowId,
-                personaId,
-                runLog.agent,
-                runLog.instancePath,
-                Date().timeIntervalSince1970,
-                messageId
+                runLog.msg.input,
+                runLog.msg.output
             )
-        } else {
-            try db.run(
-                """
-                INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
-                VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?);
-                """,
-                logId,
-                runLog.success ? 1 : 0,
-                runLog.took,
-                runLog.startedAt,
-                runLog.endedAt,
-                runLog.workflowId,
-                runLog.agent,
-                runLog.instancePath,
-                Date().timeIntervalSince1970,
-                messageId
-            )
+            let messageId = db.lastInsertRowid
+            log.info("Message inserted with messageId: \(messageId)")
+
+            log.info("Inserting \(runLog.msg.parents.count) parents")
+            for parent in runLog.msg.parents {
+                try db.run(
+                    "INSERT INTO parents (message_id, parent_id, text) VALUES (?, ?, ?);",
+                    messageId,
+                    parent.id,
+                    parent.text
+                )
+            }
+            log.info("Parents inserted")
+
+            log.info("Inserting log into logs table")
+            let logId = UUID().uuidString
+            if let personaId = runLog.personaId {
+                try db.run(
+                    """
+                    INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    logId,
+                    runLog.success ? 1 : 0,
+                    runLog.took,
+                    runLog.startedAt,
+                    runLog.endedAt,
+                    runLog.workflowId,
+                    personaId,
+                    runLog.agent,
+                    runLog.instancePath,
+                    Date().timeIntervalSince1970,
+                    messageId
+                )
+            } else {
+                try db.run(
+                    """
+                    INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
+                    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?);
+                    """,
+                    logId,
+                    runLog.success ? 1 : 0,
+                    runLog.took,
+                    runLog.startedAt,
+                    runLog.endedAt,
+                    runLog.workflowId,
+                    runLog.agent,
+                    runLog.instancePath,
+                    Date().timeIntervalSince1970,
+                    messageId
+                )
+            }
+            log.info("Log inserted successfully")
         }
-        log.info("Log inserted successfully")
     }
 
     public static func countLogs(

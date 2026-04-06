@@ -1,0 +1,16 @@
+{
+  "desc" : "Test",
+  "agent" : "cc_docker",
+  "name" : "Feature-work on 'api' app",
+  "levels" : [
+    [
+      "shell-agent-local",
+      "shell-agent-local"
+    ],
+    [
+      ":pirate-talk"
+    ]
+  ],
+  "every_secs" : 0,
+  "ask" : "Noop. Does not apply for manual workflows."
+}

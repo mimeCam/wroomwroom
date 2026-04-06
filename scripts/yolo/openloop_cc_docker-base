@@ -181,7 +181,7 @@ fi
 # Build claude command following yolo_claude.sh pattern
 C2=". /home/node/.local/bin/env"
 SKIP_PERMISSIONS_FLAG=""
-# if [ "${MODE}" != "plan" ]; then # it needs to save `~/report.md` in plan mode without asks.
+# if [ "${MODE}" != "plan" ]; then # it needs to save `~/_report.md` in plan mode without asks.
     SKIP_PERMISSIONS_FLAG="--dangerously-skip-permissions"
 # fi
 MCP_FLAGS=""
@@ -206,8 +206,8 @@ if [ -n "$SYSTEM_PROMPT" ]; then
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
 fi
 
-# if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/report.md now, even bottom level
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; } "
+# if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/_report.md now, even bottom level
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } "
 # fi
 
 if [ "$use_tier" = true ]; then

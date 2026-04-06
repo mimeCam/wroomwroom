@@ -120,7 +120,7 @@ fi
 C2=". /home/node/.local/bin/env"
 
 if [ "${MODE}" == "plan" ]; then
-    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/report.md ] && cat ~/report.md || echo \"\$REPORT\"; }")
+    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; }")
 else
     OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 fi

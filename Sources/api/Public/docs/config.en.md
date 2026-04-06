@@ -9,7 +9,7 @@ openloop-stdout.log
 **/openloop/api-stdout.log
 opencode.db-shm
 opencode.db-wal
-**/openloop/logs.db
+**/openloop/logs.db*
 **/openloop/state.json5
 `
 
