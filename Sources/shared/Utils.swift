@@ -10,6 +10,8 @@ import CoreFoundation
 import Subprocess
 import Crypto
 
+private let log = PrintLog(module: "utils")
+
 public struct Paths {
 #if DEBUG
     public static let curDir: FilePath = {
@@ -147,7 +149,7 @@ public extension PathIO {
 
                 created = true
             } catch let error as NSError {
-                print("Failed to create directory at path: \(path). \(error)")
+                log.err("Failed to create directory at path: \(path). \(error)")
 
                 created = false
             }
@@ -199,7 +201,7 @@ public extension PathIO {
         }
 
         if !didDeleteAllContent {
-            print("Failed to recursively delete directory at path: \(path)")
+            log.err("Failed to recursively delete directory at path: \(path)")
         }
 
         return didDeleteAllContent

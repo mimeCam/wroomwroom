@@ -68,9 +68,9 @@ extension PrintLog {
 
     @inlinable
     func print(_ level: String, _ s: @autoclosure () -> String) {
-        let launchTime = ProcessInfo.processInfo.systemUptime
-//        let currentTime = Date().inter
-//        let timeOffset = currentTime.timeIntervalSince(launchTime)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let timestamp = Self.dateFormatter.string(from: Date())
+        let pid = ProcessInfo.processInfo.processIdentifier
 
         let full = s()
         let contents: String
@@ -103,6 +103,13 @@ extension PrintLog {
         }
 
         // Comment `Swift.print()` to disable all log output for this file.
-        Swift.print("\(launchTime.time2) | \(level) | \(module) | \(contents)")
+        Swift.print("\(timestamp) | \(uptime.time2) | \(level) | \(module) | [PID \(pid)] \(contents)")
     }
+
+    @usableFromInline static let dateFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        return fmt
+    }()
 }

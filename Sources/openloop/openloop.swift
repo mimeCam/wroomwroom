@@ -9,6 +9,8 @@ import Dispatch
 import shared
 import ArgumentParser
 
+private let log = PrintLog(module: "openloop")
+
 @main
 struct openloop: ParsableCommand {
 
@@ -29,7 +31,7 @@ struct openloop: ParsableCommand {
                         args: ["http://localhost:54321"]
                     )
 
-                    print("Open control-plane in the browser: http://localhost:54321")
+                    log.info("Open control-plane in the browser: http://localhost:54321")
                 }
 
                 while true {
@@ -125,7 +127,7 @@ private func detectDuplicateInstance() async throws -> Bool {
     }
 
     if recheck.lastLoopAt != tsBefore {
-        print("Another openloop instance is active (pid \(recheck.pid)). Exiting.")
+        log.warn("Another openloop instance is active (pid \(recheck.pid)). Exiting.")
         return true
     }
 
@@ -141,7 +143,7 @@ private func checkDuplicateInLoop() async throws -> Bool {
     let elapsed = Date().timeIntervalSinceReferenceDate - existing.lastLoopAt
 
     if existing.pid != Int(myPid) && elapsed < Double(loopIntervalSecs + 10) {
-        print("Another openloop instance is active (pid \(existing.pid)). Exiting.")
+        log.warn("Another openloop instance is active (pid \(existing.pid)). Exiting.")
         return true
     }
 
@@ -158,7 +160,7 @@ private func loop() async throws {
     let all = try await readWorkflows()
 
     if all.isEmpty {
-        print("Open http://localhost:54321 to create or edit workflows. Currently have 0.")
+        log.info("Open http://localhost:54321 to create or edit workflows. Currently have 0.")
     }
 
     var skipped = 0
@@ -198,7 +200,7 @@ private func loop() async throws {
     }
 
     if skipped > 0 {
-        print("Skipped \(skipped) manual workflows (everySecs = 0)")
+        log.info("Skipped \(skipped) manual workflows (everySecs = 0)")
     }
 
     try await FileLoader.saveInstaneState(
@@ -214,7 +216,7 @@ private func loop() async throws {
 private func runWorkflow(
     _ id: String, _ w: Workflow
 ) async throws -> WorkflowResult? {
-    print("Start workflow: \(id)")
+    log.info("Start workflow: \(id)")
 
     let res = try await subprocess(
         FilePath(NSHomeDirectory())
@@ -230,7 +232,7 @@ private func runWorkflow(
         return nil
     }
 
-    print("Workflow \(id): \(res)")
+    log.info("Workflow \(id): \(res)")
 
     return nil
 }

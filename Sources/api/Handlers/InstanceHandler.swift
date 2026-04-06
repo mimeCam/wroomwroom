@@ -2,6 +2,8 @@ import Vapor
 import Foundation
 import shared
 
+private let log = PrintLog(module: "instance-handler")
+
 struct InstanceHandler: Sendable {
 
     func getAll(req: Request) async throws -> InstanceListResponse {
@@ -23,7 +25,7 @@ struct InstanceHandler: Sendable {
                 )
                 instances.append(InstanceInfo(path: path, state: stateInfo))
             } catch {
-                print("ERR: Failed to load state for instance: \(path), error: \(error)")
+                log.err("Failed to load state for instance: \(path), error: \(error)")
                 let stateInfo: InstanceStateInfo? = nil
                 instances.append(InstanceInfo(path: path, state: stateInfo))
             }

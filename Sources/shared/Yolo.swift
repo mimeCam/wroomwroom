@@ -7,6 +7,8 @@
 import Foundation
 import Subprocess
 
+private let log = PrintLog(module: "yolo")
+
 public func subprocess(
 //    _ name: String,
     _ name: FilePath,
@@ -52,8 +54,8 @@ public func subprocess(
                     code = excCode
             }
 
-            print(res.standardOutput ?? "<none>")
-            print(res.standardError)
+            log.err("stdout: \(res.standardOutput ?? "<none>")")
+            log.err("stderr: \(res.standardError)")
 
             if code == 2 {
                 assertionFailure("yolo script error. Check yolo script.")
@@ -65,7 +67,7 @@ public func subprocess(
                 //  - this is prob due to some MCP tool (devbrain.read_url?) failing in timeout.
                 //  - hence 258 can be ignored.
             } else {
-                print("ERR. yolo failed. Code: \(code)")
+                log.err("yolo failed. Code: \(code)")
                 assertionFailure("yolo failed.")
                 return nil
             }
@@ -193,8 +195,8 @@ public func exec(
                 code = excCode
         }
 
-        print(res.standardOutput ?? "<none>")
-        print(res.standardError)
+        log.err("stdout: \(res.standardOutput ?? "<none>")")
+        log.err("stderr: \(res.standardError)")
 
 //        assertionFailure()
         return res.standardOutput

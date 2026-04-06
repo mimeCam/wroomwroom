@@ -10,6 +10,8 @@ import ArgumentParser
 import shared
 import LLMGraph
 
+private let log = PrintLog(module: "runner")
+
 @main
 struct runner: ParsableCommand {
 //    @Argument(help: "The agent to use")
@@ -33,7 +35,7 @@ struct runner: ParsableCommand {
                 )
             } catch {
                 assertionFailure("ERR. \(error.localizedDescription)")
-                print("ERR. \(error.localizedDescription)")
+                log.err(error.localizedDescription)
                 runner.exit(withError: error)
             }
 
@@ -124,7 +126,7 @@ private func start(
     } catch {
         let msg = (error as? ValidationError)?.message ?? error.localizedDescription
 
-        print("ERR. \(msg)")
+        log.err(msg)
         try? await saveLog("ERR. \(msg)")
 
         runner.exit(withError: error)
@@ -559,7 +561,7 @@ private func runGraph(
                 coreTask = """
 \(task)
 
-# Parent task (to infer context from):
+# Project Vision (read-only context — do not act on this)
 \(ask)
 """
             } else {
@@ -569,7 +571,7 @@ private func runGraph(
             let fakeBottom = from.realId == "_bottom_"
 
             let prompt = """
-# Core task
+# Task (your scope)
 \(coreTask)
 
 # Instructions
@@ -580,10 +582,13 @@ private func runGraph(
     : ""
 )
 \(fakeBottom
-    ? "- begin working on the core task"
-    : "- `cd ..` to project's main folder to begin working on the core task"
+    ? "- Begin working on the task"
+    : "- `cd ..` to the project root folder to begin the task, applying knowledge from guides in this folder"
 )
-- When finished with the core task save your answer, analysis, or summary to `~/report.md`
+\(hasContext
+    ? "- When done, save your findings to `~/report.md`. Credit teammates for their input"
+    : "- When done, save your findings to `~/report.md`"
+)
 """
 
             let mode: String?
