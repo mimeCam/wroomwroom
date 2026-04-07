@@ -34,19 +34,23 @@ source install.sh
 
 ## Examples
 
-- [for devs](README-for-devs.md)
-    - iOS visual development
+- for devs
+    - iOS visual development - #nomorecoding
+        - todo
     - living-web
-        - openloop builds & auto-deploys `personal blog` from scratch.
-            - claude-code with opus + sonnet: (fun-example-www-cca)[https://github.com/mimeCam/fun-example-www-cca]
-            - - claude-code with glm-5.1 + glm4.7: (fun-example-www-ccz)[https://github.com/mimeCam/fun-example-www-ccz]
-- [for marketers](README-for-marketers.md)
+        - `personal blog` - openloop builds & auto-deploys  from scratch
+            - openloop orchestrates many intances of claude-code: [gh:fun-example-www-cca](https://github.com/mimeCam/fun-example-www-cca) - autodeploys to [a.getsven.com](https://a.getsven.com)
+            - openloop orchestrates many claude-codes with glm-5.1 + glm-4.7: [gh:fun-example-www-ccz](https://github.com/mimeCam/fun-example-www-ccz) - autodeploys to [z.getsven.com](https://z.getsven.com)
+- for marketers
+    - todo
+- random / fun
+    - betting workflow todo
 -
 
 
 ## Development
 
-Use openloop to develop openloop: launch `api-work` manually with feature or bugfix description. Same shortcut, run:
+Use openloop to develop openloop: launch `api-work` manually with feature or bugfix description. For terminal shortcut, run:
 ```bash
 ./api-or-frontend-work "ask ..."
 ```
