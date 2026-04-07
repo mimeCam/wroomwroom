@@ -34,7 +34,8 @@ struct runner: ParsableCommand {
                 _ = try await start(
                     workflow, ask: ask,
                     context: try? readPipedStdin(),
-                    contextParents: []
+                    contextParents: [],
+                    session: UUID().uuidString
                 )
             } catch {
                 assertionFailure("ERR. \(error.localizedDescription)")
@@ -73,7 +74,8 @@ private func readPipedStdin() throws -> String? {
 
 private func start(
     _ workflow: String, ask: String?,
-    context: String?, contextParents: [RunLog.Message.Parent]
+    context: String?, contextParents: [RunLog.Message.Parent],
+    session: String
 ) async throws -> String {
     let w = try await FileLoader.loadWorkflowById(workflow)
     guard let w else {
@@ -107,7 +109,9 @@ private func start(
             personaId: nil,
 
             agent: w.agent,
-            msg: m
+            msg: m,
+            session: session,
+            level: nil
         )
         try await FileLoader.saveRunLog(log)
     }
@@ -117,7 +121,8 @@ private func start(
         res = try await runWorkflow(
             workflow,
             ask: validAsk,
-            context: context
+            context: context,
+            session: session
         )
 
         print(res) // MUST print to stdout so that openloop captures as a result.
@@ -153,7 +158,7 @@ private func start(
 
 private func runWorkflow(
     _ workflowId: String, ask: String,
-    context: String?
+    context: String?, session: String
 ) async throws -> String {
     let w = try await fetchWorkflow(by: workflowId)
     guard let w else {
@@ -226,7 +231,8 @@ private func runWorkflow(
         workflowAgent: agent,
         ask: ask,
         levels: runPersonas,
-        outerContext: context
+        outerContext: context,
+        session: session
     )
     guard res.notEmpty else {
         throw ValidationError("Empty response from the llm-graph. LLM agent failed.")
@@ -479,7 +485,8 @@ private func runGraph(
     workflowAgent: String,
     ask: String,
     levels: [[PreparedRunItem]],
-    outerContext: String?
+    outerContext: String?,
+    session: String
 ) async throws -> String {
     levels.forEach {
         assert($0.notEmpty)
@@ -501,6 +508,10 @@ private func runGraph(
         ps.forEach { p in
             res[p.id] = p
         }
+    }
+
+    let levelByPersonaId: [String: Int] = levels.enumerated().reduce(into: [:]) { res, pair in
+        pair.element.forEach { p in res[p.id] = pair.offset }
     }
     @Sendable func runItemById(_ id: String) -> PreparedRunItem {
         assert(ps[id] != nil)
@@ -560,7 +571,8 @@ private func runGraph(
                     WorkflowRunLog.Message.Parent(
                         id: p.realId, text: msg
                     )
-                }
+                },
+                session: session
             )
             let success = res.notEmpty
 
@@ -682,7 +694,9 @@ private func runGraph(
                             id: p.realId, text: msg
                         )
                     }
-                )
+                ),
+                session: session,
+                level: levelByPersonaId[from.id]
             )
             try await FileLoader.saveRunLog(log)
 

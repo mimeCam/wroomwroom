@@ -1,11 +1,16 @@
 {
-    name: "Feature-work on 'api' app",
-    desc: "Manual worflow good for feaeture work or fixes. Manually run it like: openloop 'api-work' 'type in an ask, feature-task, etc...'",
-    every_secs: 0,
-    agent: "oc_docker-swift",
-    ask: "Describe a feature or fix",
-    levels: [
-        [ "architect" ],
-        [ "isolated_run", "designer" ],
+  "levels" : [
+    [
+      "architect"
+    ],
+    [
+      "isolated_run",
+      "designer"
     ]
+  ],
+  "desc" : "Manual worflow good for feaeture work or fixes. Manually run it like: openloop 'api-work' 'type in an ask, feature-task, etc...'",
+  "agent" : "cc_docker-swift",
+  "every_secs" : 0,
+  "ask" : "Describe a feature or fix",
+  "name" : "Feature-work on 'api' app"
 }

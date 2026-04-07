@@ -611,14 +611,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }).join('');
     }
 
-    function renderWorkflowLogsHtml(logs) {
+    function renderExpandLink(log, instancePath) {
+        if (!log.session) return '';
+        const url = `/workflow-log.html?instance=${encodeURIComponent(instancePath)}&session=${encodeURIComponent(log.session)}`;
+        return `<a href="${url}" target="_blank" class="log-expand-link">expand ↗</a>`;
+    }
+
+    function renderWorkflowLogsHtml(logs, instancePath) {
         if (logs.length === 0) {
             return '<div class="logs-empty">No logs for this workflow</div>';
         }
 
         return logs.map(log => {
             const inputBubbles = [];
-            
+
             log.msg.parents.forEach(p => {
                 inputBubbles.push(`
                     <div class="log-bubble context">
@@ -627,7 +633,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `);
             });
-            
+
             if (log.msg.input) {
                 inputBubbles.push(`
                     <div class="log-bubble input">
@@ -636,10 +642,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `);
             }
-            
+
             return `
             <div class="log-entry">
-                <div class="log-date">${formatTimestamp(log.started_at)}</div>
+                <div class="log-date">${formatTimestamp(log.started_at)}${renderExpandLink(log, instancePath)}</div>
                 ${inputBubbles.join('')}
                 <div class="log-bubble output ${log.success ? '' : 'error'}">
                     <span class="log-bubble-subtitle">output</span>
@@ -1684,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const updateWorkflowLogsPanel = () => {
                 const logsPanel = document.querySelector('.workflow-logs-panel-content');
                 if (logsPanel) {
-                    const logsHtml = renderWorkflowLogsHtml(currentWorkflowLogs);
+                    const logsHtml = renderWorkflowLogsHtml(currentWorkflowLogs, instancePath);
                     logsPanel.innerHTML = logsHtml;
                     logsPanel.scrollTop = 0;
 

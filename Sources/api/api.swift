@@ -118,6 +118,11 @@ func configure(_ app: Application) async throws {
         try await LogHandler().getWorkflowLogs(req: req)
     }
 
+    // Session logs endpoint
+    instances.grouped(":id", "logs", "sessions", ":session").get { req async throws in
+        try await LogHandler().getSessionLogs(req: req)
+    }
+
     // Workflow delete endpoint
     instances.grouped(":id", "workflows", ":wid").delete { req async throws in
         try await WorkflowHandler().delete(req: req)

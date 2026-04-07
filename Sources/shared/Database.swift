@@ -76,6 +76,13 @@ public struct LogManager {
         """)
 
         try db.run("CREATE INDEX IF NOT EXISTS idx_parents_message_id ON parents(message_id);")
+        try migrateAddSessionAndLevel(on: db)
+    }
+
+    private static func migrateAddSessionAndLevel(on db: Connection) throws {
+        try? db.run("ALTER TABLE logs ADD COLUMN session TEXT;")
+        try? db.run("ALTER TABLE logs ADD COLUMN level INTEGER;")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_session ON logs(session);")
     }
 
     public static func saveLog(_ runLog: RunLog) throws {
@@ -118,42 +125,7 @@ public struct LogManager {
 
             log.info("Inserting log into logs table")
             let logId = UUID().uuidString
-            if let personaId = runLog.personaId {
-                try db.run(
-                    """
-                    INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    logId,
-                    runLog.success ? 1 : 0,
-                    runLog.took,
-                    runLog.startedAt,
-                    runLog.endedAt,
-                    runLog.workflowId,
-                    personaId,
-                    runLog.agent,
-                    runLog.instancePath,
-                    Date().timeIntervalSince1970,
-                    messageId
-                )
-            } else {
-                try db.run(
-                    """
-                    INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id)
-                    VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?);
-                    """,
-                    logId,
-                    runLog.success ? 1 : 0,
-                    runLog.took,
-                    runLog.startedAt,
-                    runLog.endedAt,
-                    runLog.workflowId,
-                    runLog.agent,
-                    runLog.instancePath,
-                    Date().timeIntervalSince1970,
-                    messageId
-                )
-            }
+            try insertLog(runLog, messageId: messageId, logId: logId, on: db)
             log.info("Log inserted successfully")
         }
     }
@@ -235,7 +207,7 @@ public struct LogManager {
         let db = try getConnection(dbPath)
         log.info("Got connection")
 
-        var baseQuery = "SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, l.instance_path, m.input, m.output, m.id FROM logs l JOIN messages m ON l.message_id = m.id WHERE l.instance_path = ?"
+        var baseQuery = "SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, l.instance_path, m.input, m.output, m.id, l.session, l.level FROM logs l JOIN messages m ON l.message_id = m.id WHERE l.instance_path = ?"
 
         if personaId != nil {
             baseQuery += " AND l.persona_id = ?"
@@ -262,6 +234,8 @@ public struct LogManager {
             let input: String
             let output: String
             let messageId: Int64
+            let session: String?
+            let level: Int?
         }
 
         log.info("Executing query...")
@@ -291,6 +265,8 @@ public struct LogManager {
             let input = row[8] as? String ?? ""
             let output = row[9] as? String ?? ""
             let messageId = row[10] as? Int64 ?? 0
+            let session = row[11] as? String
+            let level = (row[12] as? Int64).map { Int($0) }
 
             log.info("Row #\(index + 1) data - success: \(success), took: \(took), workflowId: \(workflowId), agent: \(agent), messageId: \(messageId), personaId: \(personaId ?? "NULL")")
 
@@ -305,7 +281,9 @@ public struct LogManager {
                 instancePath: instancePath,
                 input: input,
                 output: output,
-                messageId: messageId
+                messageId: messageId,
+                session: session,
+                level: level
             ))
         }
 
@@ -344,12 +322,117 @@ public struct LogManager {
                 workflowId: logRow.workflowId,
                 personaId: logRow.personaId,
                 agent: logRow.agent,
-                msg: RunLog.Message(input: logRow.input, output: logRow.output, parents: parents)
+                msg: RunLog.Message(input: logRow.input, output: logRow.output, parents: parents),
+                session: logRow.session,
+                level: logRow.level
             )
             results.append(runLog)
         }
 
         log.info("Complete. Returning \(results.count) results")
         return results
+    }
+
+    public static func fetchLogsBySession(
+        instancePath: String,
+        session: String
+    ) throws -> [RunLog] {
+        log.info("fetchLogsBySession session: \(session)")
+        let dbPath = FilePath(instancePath)
+            .appending("openloop")
+            .appending("logs.db")
+            .string
+        let db = try getConnection(dbPath)
+
+        let query = """
+        SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, l.instance_path, m.input, m.output, m.id, l.session, l.level
+        FROM logs l JOIN messages m ON l.message_id = m.id
+        WHERE l.instance_path = ? AND l.session = ?
+        ORDER BY l.started_at ASC;
+        """
+
+        struct LogRowData {
+            let success: Bool; let took: Int
+            let startedAt: Double; let endedAt: Double
+            let workflowId: String; let personaId: String?
+            let agent: String; let instancePath: String
+            let input: String; let output: String
+            let messageId: Int64; let session: String?; let level: Int?
+        }
+
+        var logRows: [LogRowData] = []
+        let stmt = try db.prepare(query, instancePath, session)
+        for row in stmt {
+            logRows.append(LogRowData(
+                success: (row[0] as? Int64 ?? 0) != 0,
+                took: Int(row[1] as? Int64 ?? 0),
+                startedAt: row[2] as? Double ?? 0,
+                endedAt: row[3] as? Double ?? 0,
+                workflowId: row[4] as? String ?? "",
+                personaId: row[5] as? String,
+                agent: row[6] as? String ?? "",
+                instancePath: row[7] as? String ?? "",
+                input: row[8] as? String ?? "",
+                output: row[9] as? String ?? "",
+                messageId: row[10] as? Int64 ?? 0,
+                session: row[11] as? String,
+                level: (row[12] as? Int64).map { Int($0) }
+            ))
+        }
+
+        var parentsMap: [Int64: [RunLog.Message.Parent]] = [:]
+        var results: [RunLog] = []
+        for logRow in logRows {
+            if parentsMap[logRow.messageId] == nil {
+                var parents: [RunLog.Message.Parent] = []
+                let pStmt = try db.prepare("SELECT parent_id, text FROM parents WHERE message_id = ?;", logRow.messageId)
+                for pRow in pStmt {
+                    if let pid = pRow[0] as? String, let txt = pRow[1] as? String {
+                        parents.append(RunLog.Message.Parent(id: pid, text: txt))
+                    }
+                }
+                parentsMap[logRow.messageId] = parents
+            }
+            let parents = parentsMap[logRow.messageId] ?? []
+            results.append(RunLog(
+                success: logRow.success,
+                took: logRow.took,
+                startedAt: logRow.startedAt,
+                endedAt: logRow.endedAt,
+                instancePath: logRow.instancePath,
+                workflowId: logRow.workflowId,
+                personaId: logRow.personaId,
+                agent: logRow.agent,
+                msg: RunLog.Message(input: logRow.input, output: logRow.output, parents: parents),
+                session: logRow.session,
+                level: logRow.level
+            ))
+        }
+        log.info("fetchLogsBySession complete. \(results.count) logs")
+        return results
+    }
+
+    private static func insertLog(
+        _ runLog: RunLog, messageId: Int64, logId: String, on db: Connection
+    ) throws {
+        try db.run(
+            """
+            INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id, session, level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            logId,
+            runLog.success ? 1 : 0,
+            runLog.took,
+            runLog.startedAt,
+            runLog.endedAt,
+            runLog.workflowId,
+            runLog.personaId,
+            runLog.agent,
+            runLog.instancePath,
+            Date().timeIntervalSince1970,
+            messageId,
+            runLog.session,
+            runLog.level.map { Int64($0) }
+        )
     }
 }

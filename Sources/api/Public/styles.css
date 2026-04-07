@@ -2056,12 +2056,25 @@ body {
 }
 
 .log-date {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 10px;
     color: var(--text-faint);
     font-family: var(--font-mono);
     margin-bottom: 8px;
     opacity: 0.6;
 }
+
+.log-expand-link {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--accent-primary);
+    text-decoration: none;
+    opacity: 1;
+    white-space: nowrap;
+}
+.log-expand-link:hover { text-decoration: underline; }
 
 .log-duration {
     font-size: 10px;

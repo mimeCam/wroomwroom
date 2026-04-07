@@ -87,6 +87,8 @@ public struct RunLog: Codable {
 
     public let agent: String
     public let msg: Message
+    public let session: String?
+    public let level: Int?
 
     public struct Message: Codable {
         public let input: String
@@ -117,7 +119,9 @@ public struct RunLog: Codable {
         success: Bool,
         took: Int, startedAt: Double, endedAt: Double,
         instancePath: String, workflowId: String, personaId: String?,
-        agent: String, msg: Message
+        agent: String, msg: Message,
+        session: String? = nil,
+        level: Int? = nil
     ) {
         self.success = success
         self.took = took
@@ -130,6 +134,8 @@ public struct RunLog: Codable {
 
         self.agent = agent
         self.msg = msg
+        self.session = session
+        self.level = level
     }
 
 }

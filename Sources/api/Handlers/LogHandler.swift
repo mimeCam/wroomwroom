@@ -23,6 +23,7 @@ struct LogHandler: Sendable {
         var stats: [String: PersonaStats] = [:]
 
         do {
+            try LogManager.createTables(at: instancePath)
             let runLogs = try LogManager.fetchLogs(
                 instancePath: instancePath,
                 personaId: personaId,
@@ -87,6 +88,57 @@ struct LogHandler: Sendable {
         )
     }
     
+    func getSessionLogs(req: Request) async throws -> SessionLogsResponse {
+        guard let rawInstancePath = req.parameters.get("id") else { throw Abort(.badRequest) }
+        guard let rawSession = req.parameters.get("session") else { throw Abort(.badRequest) }
+
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+        let session = rawSession.removingPercentEncoding ?? rawSession
+
+        var logs: [SessionLogEntry] = []
+        do {
+            try LogManager.createTables(at: instancePath)
+            let runLogs = try LogManager.fetchLogsBySession(instancePath: instancePath, session: session)
+            logs = runLogs.map { toSessionLogEntry($0) }
+        } catch {
+            req.logger.error("Failed to fetch session logs: \(error)")
+        }
+
+        let levels = extractLevels(from: logs)
+        return SessionLogsResponse(instance_id: instancePath, session: session, levels: levels, logs: logs)
+    }
+
+    private func toSessionLogEntry(_ log: RunLog) -> SessionLogEntry {
+        let startedAtMs = Int64(Date(timeIntervalSinceReferenceDate: log.startedAt).timeIntervalSince1970 * 1000)
+        let endedAtMs = Int64(Date(timeIntervalSinceReferenceDate: log.endedAt).timeIntervalSince1970 * 1000)
+        return SessionLogEntry(
+            success: log.success, took: log.took,
+            started_at: startedAtMs, ended_at: endedAtMs,
+            id: log.workflowId, workflowId: log.workflowId,
+            personaId: log.personaId, agent: log.agent,
+            level: log.level, session: log.session,
+            msg: toLogMessage(log.msg)
+        )
+    }
+
+    private func toLogMessage(_ msg: RunLog.Message) -> PersonaLogMessage {
+        PersonaLogMessage(
+            input: msg.input, output: msg.output,
+            parents: msg.parents.map { PersonaLogParent(id: $0.id, text: $0.text) }
+        )
+    }
+
+    private func extractLevels(from logs: [SessionLogEntry]) -> [LevelInfo] {
+        var firstIndex: [Int: Int] = [:]
+        for (idx, log) in logs.enumerated() {
+            guard let lvl = log.level, firstIndex[lvl] == nil else { continue }
+            firstIndex[lvl] = idx
+        }
+        return firstIndex.sorted { $0.key < $1.key }.map { lvl, logIndex in
+            LevelInfo(levelIndex: lvl, label: "L\(lvl + 1)", logIndex: logIndex)
+        }
+    }
+
     func getWorkflowLogs(req: Request) async throws -> WorkflowLogsResponse {
         guard let rawInstancePath = req.parameters.get("id") else {
             throw Abort(.badRequest)
@@ -103,6 +155,7 @@ struct LogHandler: Sendable {
         var logs: [WorkflowLogEntry] = []
 
         do {
+            try LogManager.createTables(at: instancePath)
             let runLogs = try LogManager.fetchLogs(
                 instancePath: instancePath,
                 personaId: nil,
@@ -125,6 +178,7 @@ struct LogHandler: Sendable {
                     id: log.workflowId,
                     workflowId: log.workflowId,
                     agent: log.agent,
+                    session: log.session,
                     msg: PersonaLogMessage(
                         input: log.msg.input,
                         output: log.msg.output,
@@ -203,6 +257,7 @@ extension LogHandler {
         var id: String
         var workflowId: String
         var agent: String
+        var session: String?
         var msg: PersonaLogMessage
     }
 
@@ -213,6 +268,33 @@ extension LogHandler {
         var offset: Int
         var count: Int
         var total: Int
+    }
+
+    struct LevelInfo: Content, Sendable {
+        var levelIndex: Int
+        var label: String
+        var logIndex: Int
+    }
+
+    struct SessionLogEntry: Content, Sendable {
+        var success: Bool
+        var took: Int
+        var started_at: Int64
+        var ended_at: Int64
+        var id: String
+        var workflowId: String
+        var personaId: String?
+        var agent: String
+        var level: Int?
+        var session: String?
+        var msg: PersonaLogMessage
+    }
+
+    struct SessionLogsResponse: Content, Sendable {
+        var instance_id: String
+        var session: String
+        var levels: [LevelInfo]
+        var logs: [SessionLogEntry]
     }
 }
 
