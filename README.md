@@ -37,6 +37,16 @@ source install.sh
 - [for devs](README-for-devs.md)
     - iOS visual development
     - living-web
-    - 24/7 ai
+        - openloop builds & auto-deploys `personal blog` from scratch.
+            - claude-code with opus + sonnet: (fun-example-www-cca)[https://github.com/mimeCam/fun-example-www-cca]
+            - - claude-code with glm-5.1 + glm4.7: (fun-example-www-ccz)[https://github.com/mimeCam/fun-example-www-ccz]
 - [for marketers](README-for-marketers.md)
 -
+
+
+## Development
+
+Use openloop to develop openloop: launch `api-work` manually with feature or bugfix description. Same shortcut, run:
+```bash
+./api-or-frontend-work "ask ..."
+```

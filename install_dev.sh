@@ -183,12 +183,6 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
 fi
 
 echo ""
-echo "Enabled services:"
-echo "systemctl --user list-units --type=service"
-echo "All user service unit files (including inactive/enabled):"
-echo "systemctl --user list-unit-files --type=service"
-
-echo ""
 echo "Run 'ya hi' to verify that claude-code is authenticated (subscription)"
 
 echo ""
