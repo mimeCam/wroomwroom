@@ -161,6 +161,13 @@ echo ""
 echo "SUCCESS. To add openloop to a project run 'openloop' in terminal from the project's folder . Control Plane available at http://localhost:54321/"
 echo "You may need to setup auth for AI agents (opencode, claude-code). See https://openloop.mimecam.com/docs"
 
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    open http://localhost:54321/ || true
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    command -v xdg-open > /dev/null 2>&1 && xdg-open http://localhost:54321/ || true
+fi
+
+
 echo ""
 echo "Checking oc_docker:"
 openloop_oc_docker pirate "how many files, not counting folders, in cur dir?" "speak like true Jack Sparrow ey" plan
@@ -175,12 +182,6 @@ fi
 #     echo "Checking mv_docker (subscription):"
 #     openloop_mv_docker "pirate" "ahoy there" "speak like true Jack Sparrow ey" "plan"
 # fi
-
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    open http://localhost:54321/ || true
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    command -v xdg-open > /dev/null 2>&1 && xdg-open http://localhost:54321/ || true
-fi
 
 echo ""
 echo "Run 'ya hi' to verify that claude-code is authenticated (subscription)"

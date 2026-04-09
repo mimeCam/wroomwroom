@@ -4,6 +4,16 @@ Openloop is your ai agent orchestrator to build repeateable workflows and create
 You may combine different agents like claude-code and opencode to work on a single task together or mix multiple claude-code subscriptions.
 
 
+## Example workflow
+
+You build your own workflows. Here is an example flow I use a lot for end-to-end predictable feature development:
+
+| | |
+|:---:|---|
+| Implement <smth> ... | Your prompt |
+| ![levels](gh/levels.jpg) | Each level represents a stage in the pipeline:<br>— `Jason` is a creative director persona that expands input prompt into unique feature description<br>- `Paul` and `Elon` are 2 analysts that ground `Jason's` thoughts to something that would be reasonable to build<br>- `Tanya` and `Mike` come up with specs based on `Paul's` and `Elon's`. `Tanya` (UIX) enforces consistent and opinionated design across the project and `Mike` (CTO) decides on tech stack to use<br>- `Sid` implements based on inputs from `Tanya` and `Mike` - actually writes code |
+| 🦄 | Result: single input prompt piped through 4-levels logic gate. 6 separate agents were launched, each acted as <role> primed for its own <task>. e.g.: claude-code was launched 2 times, once as analyst Paul, and once as CTO Mike |
+
 
 ## Agents support by OS
 
