@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# yz - yolo-z (one-shot): Claude code with z API as inference provider, requires prompt
+# yz-swift - yolo-z (one-shot): Claude code with z API, swift devcontainer
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,6 +12,6 @@ if [ -z "$PROMPT" ]; then
     exit 1
 fi
 
-CONTAINER_NAME="yz"
-IMAGE="yolo_devcontainer"
+CONTAINER_NAME="yz-swift"
+IMAGE="yolo_devcontainer:swift"
 source "$SCRIPT_DIR/y-z"

@@ -13,4 +13,5 @@ if [ -z "$PROMPT" ]; then
 fi
 
 CONTAINER_NAME="ya"
+IMAGE="yolo_devcontainer"
 source "$SCRIPT_DIR/y"

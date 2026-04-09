@@ -25,7 +25,7 @@ Think a lot before writting an implementation. Imagine a system as if it was dra
 Be pragmatic and concise.'
 
 
-IMAGE="yolo_devcontainer"
+IMAGE="${IMAGE:-yolo_devcontainer}"
 
 # Files/subfolders to copy from $HOME/.claude to sandbox
 # Empty = copy nothing (fresh environment)

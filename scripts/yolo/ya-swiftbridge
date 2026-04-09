@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# yz - yolo-z (one-shot): Claude code with z API as inference provider, requires prompt
+# ya-swiftbridge - yolo-anthropic (one-shot): Claude code with Anthropic, swiftbridge devcontainer
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,6 +12,6 @@ if [ -z "$PROMPT" ]; then
     exit 1
 fi
 
-CONTAINER_NAME="yz"
-IMAGE="yolo_devcontainer"
-source "$SCRIPT_DIR/y-z"
+CONTAINER_NAME="ya-swiftbridge"
+IMAGE="yolo_devcontainer:swiftbridge"
+source "$SCRIPT_DIR/y"

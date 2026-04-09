@@ -208,7 +208,8 @@ if [ -n "$SYSTEM_PROMPT" ]; then
 fi
 
 # if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/_report.md now, even bottom level
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } "
+    # CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } "
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || echo \"\$REPORT\"; } "
 # fi
 
 if [ "$use_tier" = true ]; then

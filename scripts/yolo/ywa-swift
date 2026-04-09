@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# ywa-swift - yolo-wait-anthropic (interactive): Claude code with Anthropic, swift devcontainer
+#
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+CONTAINER_NAME="ywa-swift"
+IMAGE="yolo_devcontainer:swift"
+source "$SCRIPT_DIR/y"
