@@ -137,3 +137,5 @@ $DOCKER run --rm \
 if [ -n "$SYSTEM_PROMPT_TMP_DIR" ]; then
     rm -rf "$SYSTEM_PROMPT_TMP_DIR"
 fi
+
+[ -f "$ROOT/_report.md" ] && rm "$ROOT/_report.md"

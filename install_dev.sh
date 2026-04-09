@@ -11,10 +11,10 @@ if [[ "${TRACE-0}" == "1" ]]; then
     set -o xtrace
 fi
 
-cd "$(dirname "$0")"
+cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
 if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
-    apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev libgcc-13-dev libpython3-dev libstdc++-13-dev libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
+    apt-get update && apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev libgcc-dev libpython3-dev libstdc++-dev libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
 
     echo "Error: Running as root or under /root/ is not supported." >&2
     echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2

@@ -185,3 +185,5 @@ $DOCKER run --rm \
     -w "$PRJ" \
     $IMAGE "${OCRUN[@]}"
     # $IMAGE tail -F /dev/null
+
+[ -f "$ROOT/_report.md" ] && rm "$ROOT/_report.md"

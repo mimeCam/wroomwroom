@@ -5,6 +5,6 @@
 #   source install.sh
 #
 
-cd "$(dirname "$0")"
+cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
 ./install_dev.sh && export PATH="$HOME/.local/bin:$PATH"
