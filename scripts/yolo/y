@@ -88,4 +88,4 @@ docker run --rm -it \
 	-v "$PWD:$PWD" \
 	-w "$PWD" \
 	--name "$CONTAINER_NAME" \
-	$IMAGE bash -c "$C2 && claude --dangerously-skip-permissions --append-system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"
+	$IMAGE bash -c "$C2 && claude --no-chrome --dangerously-skip-permissions --system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"

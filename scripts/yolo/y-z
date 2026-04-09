@@ -47,7 +47,7 @@ MODEL_ENV_FLAGS=()
 [ -n "$ANTHROPIC_DEFAULT_HAIKU_MODEL" ] && MODEL_ENV_FLAGS+=(-e "ANTHROPIC_DEFAULT_HAIKU_MODEL=$ANTHROPIC_DEFAULT_HAIKU_MODEL")
 [ -n "$CLAUDE_CODE_SUBAGENT_MODEL" ] && MODEL_ENV_FLAGS+=(-e "CLAUDE_CODE_SUBAGENT_MODEL=$CLAUDE_CODE_SUBAGENT_MODEL")
 
-CLAUDE_CMD="claude --dangerously-skip-permissions --append-system-prompt \"\$SYSTEM_PROMPT\""
+CLAUDE_CMD="claude --no-chrome --dangerously-skip-permissions --system-prompt \"\$SYSTEM_PROMPT\""
 if [ -n "$PROMPT" ]; then
 	CLAUDE_CMD="$CLAUDE_CMD -p \"\$PROMPT\""
 fi
