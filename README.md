@@ -10,9 +10,9 @@ You build your own workflows. Here is an example flow I use a lot for end-to-end
 
 | | |
 |:---:|---|
-| Implement <smth> ... | Your prompt |
-| ![levels](gh/levels.jpg) | Each level represents a stage in the pipeline:<br>— `Jason` is a creative director persona that expands input prompt into unique feature description<br>- `Paul` and `Elon` are 2 analysts that ground `Jason's` thoughts to something that would be reasonable to build<br>- `Tanya` and `Mike` come up with specs based on `Paul's` and `Elon's`. `Tanya` (UIX) enforces consistent and opinionated design across the project and `Mike` (CTO) decides on tech stack to use<br>- `Sid` implements based on inputs from `Tanya` and `Mike` - actually writes code |
-| 🦄 | Result: single input prompt piped through 4-levels logic gate. 6 separate agents were launched, each acted as <role> primed for its own <task>. e.g.: claude-code was launched 2 times, once as analyst Paul, and once as CTO Mike |
+| Implement *smth* ... | Your prompt |
+| ![levels](gh/levels.jpg) | Each level represents a stage in the pipeline:<br>— [Jason](https://world.hey.com/jason) is a creative director persona that expands input prompt into unique feature description<br>- `Paul` and `Elon` are 2 analysts that ground [Jason's](https://world.hey.com/jason) thoughts to something that would be reasonable to build<br>- [Tanya](https://dnsk.work/blog) and `Mike` come up with specs based on `Paul's` and `Elon's`. [Tanya](https://dnsk.work/blog) (UIX) enforces consistent and opinionated design across the project and `Mike` (CTO) decides on tech stack to use<br>- `Sid` implements based on inputs from [Tanya](https://dnsk.work/blog) and `Mike` - actually writes code |
+| 🦄 | Result: single input prompt piped through 4-levels logic gate. 6 separate agents were launched, each acted as *role* primed for its own *task*. e.g.: claude-code was launched 2 times, once as analyst Paul, and once as CTO Mike |
 
 
 ## Agents support by OS
