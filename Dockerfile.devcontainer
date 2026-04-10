@@ -155,7 +155,10 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.profile
 RUN echo 'export PATH=$HOME/.cargo/bin:$PATH' >> ~/.bashrc
+RUN echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.profile
+RUN echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
 
+ENV PATH="/home/node/.local/bin:${PATH}"
 RUN curl -LsSf https://mistral.ai/vibe/install.sh | bash
 # RUN uv tool install mistral-vibe
 
