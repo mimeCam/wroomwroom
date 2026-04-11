@@ -178,7 +178,6 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
 fi
 
 # Build claude command following yolo_claude.sh pattern
-C2=". /home/node/.local/bin/env"
 SKIP_PERMISSIONS_FLAG=""
 # if [ "${MODE}" != "plan" ]; then # it needs to save `~/_report.md` in plan mode without asks.
     SKIP_PERMISSIONS_FLAG="--dangerously-skip-permissions"
@@ -226,7 +225,7 @@ if [ "$use_tier" = true ]; then
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+        $IMAGE bash -c "$CLAUDE_CMD"
 else
     $DOCKER run --rm \
         --pids-limit=500 \
@@ -242,5 +241,5 @@ else
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$C2 && $CLAUDE_CMD"
+        $IMAGE bash -c "$CLAUDE_CMD"
 fi

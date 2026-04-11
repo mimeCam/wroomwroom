@@ -114,13 +114,10 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     YOLO_STDIN=""
 fi
 
-# Source environment setup
-C2=". /home/node/.local/bin/env"
-
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
-    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; }")
+    OCRUN=("bash" "-c" "REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; }")
 # else
-#     OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
+#     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
 
 $DOCKER run --rm \

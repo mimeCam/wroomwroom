@@ -71,8 +71,6 @@ trap on_exit EXIT
 echo "Copied cc-config files to CLAUDE_SBX: $CLAUDE_SBX"
 
 
-C2=". /home/node/.local/bin/env"
-
 PROMPT_FLAG=""
 if [ -n "$PROMPT" ]; then
     PROMPT_FLAG="-p \"$PROMPT\""
@@ -88,4 +86,4 @@ docker run --rm -it \
 	-v "$PWD:$PWD" \
 	-w "$PWD" \
 	--name "$CONTAINER_NAME" \
-	$IMAGE bash -c "$C2 && claude --no-chrome --dangerously-skip-permissions --system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"
+	$IMAGE bash -c "claude --no-chrome --dangerously-skip-permissions --system-prompt \"$SYSTEM_PROMPT\" $PROMPT_FLAG"
