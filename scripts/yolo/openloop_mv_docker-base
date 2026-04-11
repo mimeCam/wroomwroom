@@ -47,13 +47,11 @@ if [ -z "$PROMPT" ]; then
 fi
 
 ROOT="$PWD"
-
-# Check that openloop directory exists
 if [ ! -d "$ROOT/openloop" ]; then
     echo "Error: openloop directory not found in $ROOT" >&2
     exit 1
 fi
-
+if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
 
 # Capture piped stdin at top level (before any subshells)
 YOLO_STDIN=""
@@ -120,7 +118,7 @@ fi
 C2=". /home/node/.local/bin/env"
 
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
-    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || echo \"\$REPORT\"; }")
+    OCRUN=("bash" "-c" "$C2 && REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; }")
 # else
 #     OCRUN=("bash" "-c" "$C2 && vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
@@ -137,5 +135,3 @@ $DOCKER run --rm \
 if [ -n "$SYSTEM_PROMPT_TMP_DIR" ]; then
     rm -rf "$SYSTEM_PROMPT_TMP_DIR"
 fi
-
-# if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi

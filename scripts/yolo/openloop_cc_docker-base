@@ -68,12 +68,11 @@ if [ -z "$PROMPT" ]; then
 fi
 
 ROOT="$PWD"
-
-# Check that openloop directory exists
 if [ ! -d "$ROOT/openloop" ]; then
     echo "Error: openloop directory not found in $ROOT" >&2
     exit 1
 fi
+if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
 
 # Determine MCP config path with priority
 MCP_CONFIG_PATH=""
@@ -209,7 +208,7 @@ fi
 
 # if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/_report.md now, even bottom level
     # CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } "
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || echo \"\$REPORT\"; } "
+    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; } "
 # fi
 
 if [ "$use_tier" = true ]; then
@@ -245,5 +244,3 @@ else
         -w "$PRJ" \
         $IMAGE bash -c "$C2 && $CLAUDE_CMD"
 fi
-
-# if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
