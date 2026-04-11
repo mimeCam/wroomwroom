@@ -246,4 +246,4 @@ else
         $IMAGE bash -c "$C2 && $CLAUDE_CMD"
 fi
 
-[ -f "$ROOT/_report.md" ] && rm "$ROOT/_report.md"
+# if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi

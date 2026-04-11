@@ -186,4 +186,4 @@ $DOCKER run --rm \
     $IMAGE "${OCRUN[@]}"
     # $IMAGE tail -F /dev/null
 
-[ -f "$ROOT/_report.md" ] && rm "$ROOT/_report.md"
+# if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
