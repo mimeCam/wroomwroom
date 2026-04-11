@@ -14,7 +14,18 @@ fi
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
 if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
-    apt-get update && apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev libgcc-dev libpython3-dev libstdc++-dev libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
+    apt-get update
+
+    gcc_version=$(gcc --version 2>/dev/null | head -1 | grep -oP '\d+' | head -1) || true
+    if [[ -z "$gcc_version" ]]; then
+        gcc_version=$(apt-cache search '^libgcc-[0-9]+-dev$' 2>/dev/null | grep -oP 'libgcc-\K\d+' | sort -n | tail -1)
+    fi
+    if [[ -z "$gcc_version" ]]; then
+        echo "Error: Could not determine GCC version for libgcc/libstdc++ dev packages" >&2
+        exit 1
+    fi
+
+    apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev "libgcc-${gcc_version}-dev" libpython3-dev "libstdc++-${gcc_version}-dev" libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
 
     echo "Error: Running as root or under /root/ is not supported." >&2
     echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2
