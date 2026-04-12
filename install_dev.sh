@@ -13,33 +13,7 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
-if [ "$(id -u)" -eq 0 ] || [[ "$PWD" == /root/* ]]; then
-    apt-get update
-
-    gcc_version=$(gcc --version 2>/dev/null | head -1 | grep -oP '\d+' | head -1) || true
-    if [[ -z "$gcc_version" ]]; then
-        gcc_version=$(apt-cache search '^libgcc-[0-9]+-dev$' 2>/dev/null | grep -oP 'libgcc-\K\d+' | sort -n | tail -1)
-    fi
-    if [[ -z "$gcc_version" ]]; then
-        echo "Error: Could not determine GCC version for libgcc/libstdc++ dev packages" >&2
-        exit 1
-    fi
-
-    apt-get -y install binutils unzip libc6-dev libcurl4-openssl-dev "libgcc-${gcc_version}-dev" libpython3-dev "libstdc++-${gcc_version}-dev" libxml2-dev libncurses-dev libz3-dev pkg-config zlib1g-dev
-
-    echo "Error: Running as root or under /root/ is not supported." >&2
-    echo "Docker containers use a non-root 'node' (uid 1000) user that cannot write files owned by root, or traverse /root." >&2
-    echo "Run as a different (non-root) user." >&2
-    echo ""
-    echo "To create new user with 'node' username (different is OK):"
-    echo "useradd -m -s /bin/bash node"
-    echo "usermod -aG docker node"
-    echo "passwd node"
-    echo "su - node"
-    echo ""
-
-    exit 1
-fi
+./_verify_system.sh || exit 1
 
 verify_available() {
     local cmd=$1
