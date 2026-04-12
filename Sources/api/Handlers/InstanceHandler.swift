@@ -9,6 +9,9 @@ struct InstanceHandler: Sendable {
     func getAll(req: Request) async throws -> InstanceListResponse {
         let workerPaths = try await Launcher.listWorkers()
 
+        // Fetch all manual workflows once (RAM-only, cheap)
+        let allManual = await ManualWorkflowRegistry.shared.getAll()
+
         var instances: [InstanceInfo] = []
         for path in workerPaths {
             do {
@@ -23,11 +26,31 @@ struct InstanceHandler: Sendable {
                     activeRunningWorkflows: s.activeRunningWorkflows,
                     inactiveWorkflows: s.inactiveWorkflows
                 )
-                instances.append(InstanceInfo(path: path, state: stateInfo))
+
+                let instanceManual = allManual.filter { $0.instancePath == path }
+                let manualActive = instanceManual.filter { $0.status == "running" }.count
+                let manualCompleted = instanceManual.filter { $0.status == "completed" || $0.status == "failed" }.count
+
+                instances.append(InstanceInfo(
+                    path: path,
+                    state: stateInfo,
+                    manualActive: manualActive,
+                    manualCompleted: manualCompleted
+                ))
             } catch {
                 log.err("Failed to load state for instance: \(path), error: \(error)")
                 let stateInfo: InstanceStateInfo? = nil
-                instances.append(InstanceInfo(path: path, state: stateInfo))
+
+                let instanceManual = allManual.filter { $0.instancePath == path }
+                let manualActive = instanceManual.filter { $0.status == "running" }.count
+                let manualCompleted = instanceManual.filter { $0.status == "completed" || $0.status == "failed" }.count
+
+                instances.append(InstanceInfo(
+                    path: path,
+                    state: stateInfo,
+                    manualActive: manualActive,
+                    manualCompleted: manualCompleted
+                ))
             }
         }
 
@@ -77,6 +100,8 @@ extension InstanceHandler {
     struct InstanceInfo: Content, Sendable {
         var path: String
         var state: InstanceStateInfo?
+        var manualActive: Int
+        var manualCompleted: Int
     }
 
     struct InstanceListResponse: Content, Sendable {

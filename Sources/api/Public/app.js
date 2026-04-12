@@ -98,7 +98,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 personas: instancePersonas[path] || [],
                 workflowsLoaded: isExpanded && instanceWorkflows[path] !== undefined,
                 workflows: instanceWorkflows[path] || [],
-                state: state
+                state: state,
+                manualActive: instanceData.manualActive || 0,
+                manualCompleted: instanceData.manualCompleted || 0
             };
         });
 
@@ -144,6 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let expandedContentHtml = '';
         let personaCountHtml = '';
         let workflowCountHtml = '';
+        let manualBadgesHtml = '';
 
         const stateAvailable = instance.state && instance.state.lastLoopAtUnixMs !== null;
 
@@ -161,12 +164,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         personaCountHtml = getPersonaCountHtml(instance.fullPath, instance.state);
         workflowCountHtml = getWorkflowCountHtml(instance.fullPath, instance.state);
+        manualBadgesHtml = getManualWorkflowBadgesHtml(instance.manualActive, instance.manualCompleted);
 
         if (instance.expanded) {
             const personasHtml = renderPersonasHtml(instance.personas, instance.fullPath);
             const workflowsHtml = renderWorkflowsHtml(instance.workflows, instance.fullPath);
             expandedContentHtml = renderExpandedContentHtml(instance.fullPath, personasHtml, workflowsHtml);
         }
+
+        const badgesRowHtml = (personaCountHtml || workflowCountHtml || manualBadgesHtml)
+            ? `<div class="instance-badges">${personaCountHtml}${workflowCountHtml}${manualBadgesHtml}</div>`
+            : '';
 
         return `
             <div class="instance-node ${instance.expanded ? 'expanded' : ''}"
@@ -180,11 +188,10 @@ document.addEventListener('DOMContentLoaded', function() {
                          <span class="instance-name">${escapeHtml(instance.name)}</span><span class="info-icon" data-doc="instance" title="What is an instance?">ⓘ</span>
                         ${statusHtml}
                     </div>
-                    <div class="instance-footer">
-                        <span class="instance-path" title="${escapeHtml(instance.fullPath)}">${escapeHtml(pathBreadcrumb)}</span>
-                        ${personaCountHtml}
-                        ${workflowCountHtml}
+                    <div class="instance-path-row">
+                        <span class="instance-path" title="${escapeHtml(instance.fullPath)}">${escapeHtml(instance.fullPath)}</span>
                     </div>
+                    ${badgesRowHtml}
                 </div>
                 ${expandedContentHtml}
             </div>
@@ -692,13 +699,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const state = instanceStateCache[path];
 
             const footer = instanceRow.querySelector('.instance-footer');
-            if (footer) {
-                const existingPersonaCount = footer.querySelector('.persona-count');
+            const badgesRow = instanceRow.querySelector('.instance-badges');
+            if (badgesRow) {
+                const existingPersonaCount = badgesRow.querySelector('.persona-count');
                 if (existingPersonaCount) existingPersonaCount.remove();
-                const existingWorkflowCount = footer.querySelector('.workflow-count');
+                const existingWorkflowCount = badgesRow.querySelector('.workflow-count');
                 if (existingWorkflowCount) existingWorkflowCount.remove();
-                footer.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state));
-                footer.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state));
+                const existingManualActive = badgesRow.querySelector('.manual-count-active');
+                if (existingManualActive) existingManualActive.remove();
+                const existingManualDone = badgesRow.querySelector('.manual-count-done');
+                if (existingManualDone) existingManualDone.remove();
+                badgesRow.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state));
+                badgesRow.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state));
             }
         }
 
@@ -814,12 +826,24 @@ document.addEventListener('DOMContentLoaded', function() {
         return `
             <div class="expanded-content">
                 <div class="subview personas-column">
-                    <div class="subview-header">Personas</div>
+                    <div class="subview-header">
+                        <span>Personas</span>
+                        <div class="subview-search-wrapper">
+                            <svg class="subview-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                            <input class="subview-search" type="text" placeholder="Filter…" data-filter="personas" data-instance-path="${escapeHtml(path)}" aria-label="Filter personas" autocomplete="off" spellcheck="false">
+                        </div>
+                    </div>
                     <div class="persona-list">${personasHtml}</div>
                     <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
                 </div>
                 <div class="subview workflows-column">
-                    <div class="subview-header">Workflows</div>
+                    <div class="subview-header">
+                        <span>Workflows</span>
+                        <div class="subview-search-wrapper">
+                            <svg class="subview-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                            <input class="subview-search" type="text" placeholder="Filter…" data-filter="workflows" data-instance-path="${escapeHtml(path)}" aria-label="Filter workflows" autocomplete="off" spellcheck="false">
+                        </div>
+                    </div>
                     <div class="workflow-list">${workflowsHtml}</div>
                     <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
                     <div class="manual-workflows-section">
@@ -855,6 +879,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         return `<span class="workflow-count">Workflows: ${activeCount}/${total}</span>`;
+    }
+
+    function getManualWorkflowBadgesHtml(active, completed) {
+        let html = '';
+        if (active > 0)
+            html += '<span class="manual-count-active has-active">Manual: ' + active + ' active</span>';
+        if (completed > 0)
+            html += '<span class="manual-count-done">Manual: ' + completed + ' done</span>';
+        return html;
     }
 
     async function fetchPersonaLogs(path, personaId = null, offset = 0, count = 5) {
@@ -914,7 +947,11 @@ document.addEventListener('DOMContentLoaded', function() {
         workflowCache[path] = workflows.length;
 
         const existingContent = node.querySelector('.expanded-content');
+        const prevFilters = {};
         if (existingContent) {
+            existingContent.querySelectorAll('.subview-search').forEach(inp => {
+                if (inp.value) prevFilters[inp.dataset.filter] = inp.value;
+            });
             existingContent.remove();
         }
 
@@ -923,20 +960,29 @@ document.addEventListener('DOMContentLoaded', function() {
         const expandedContentHtml = renderExpandedContentHtml(path, personasHtml, workflowsHtml);
         node.insertAdjacentHTML('beforeend', expandedContentHtml);
 
+        Object.entries(prevFilters).forEach(([key, val]) => {
+            const inp = node.querySelector(`.subview-search[data-filter="${key}"]`);
+            if (inp) { inp.value = val; applySubviewFilter(inp); }
+        });
+
         loadManualWorkflowsForInstance(path, node);
 
         const instanceRow = node.querySelector('.instance-row');
         if (instanceRow) {
-            const footer = instanceRow.querySelector('.instance-footer');
-            if (footer) {
-                const existingPersonaCount = footer.querySelector('.persona-count');
+            const badgesRow = instanceRow.querySelector('.instance-badges');
+            if (badgesRow) {
+                const existingPersonaCount = badgesRow.querySelector('.persona-count');
                 if (existingPersonaCount) existingPersonaCount.remove();
-                const existingWorkflowCount = footer.querySelector('.workflow-count');
+                const existingWorkflowCount = badgesRow.querySelector('.workflow-count');
                 if (existingWorkflowCount) existingWorkflowCount.remove();
+                const existingManualActive = badgesRow.querySelector('.manual-count-active');
+                if (existingManualActive) existingManualActive.remove();
+                const existingManualDone = badgesRow.querySelector('.manual-count-done');
+                if (existingManualDone) existingManualDone.remove();
 
                 const state = instanceStateCache[path];
-                footer.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state, personas.length));
-                footer.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state, workflows.length));
+                badgesRow.insertAdjacentHTML('beforeend', getPersonaCountHtml(path, state, personas.length));
+                badgesRow.insertAdjacentHTML('beforeend', getWorkflowCountHtml(path, state, workflows.length));
             }
         }
     }
@@ -2818,8 +2864,68 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function filterPersonas(subview, query) {
+        subview.querySelectorAll('.persona-node').forEach(n => {
+            const name = (n.dataset.personaName || '').toLowerCase();
+            const id   = (n.dataset.personaId || '').toLowerCase();
+            const visible = name.includes(query) || id.includes(query);
+            n.style.display = visible ? '' : 'none';
+            const label = n.querySelector('.persona-label');
+            if (label) {
+                if (query && visible) {
+                    label.innerHTML = highlightMatch(label.textContent, query);
+                } else {
+                    label.textContent = label.textContent;
+                }
+            }
+        });
+    }
+
+    function filterWorkflows(subview, query) {
+        subview.querySelectorAll('.workflow-node').forEach(n => {
+            const labelEl = n.querySelector('.workflow-label');
+            const idEl    = n.querySelector('.workflow-id');
+            const labelText = (labelEl?.textContent || '').toLowerCase();
+            const idText    = (idEl?.textContent || '').toLowerCase();
+            const visible = labelText.includes(query) || idText.includes(query);
+            n.style.display = visible ? '' : 'none';
+            if (query && visible) {
+                if (labelEl) labelEl.innerHTML = highlightMatch(labelEl.textContent, query);
+                if (idEl) idEl.innerHTML = highlightMatch(idEl.textContent, query);
+            } else {
+                if (labelEl) labelEl.textContent = labelEl.textContent;
+                if (idEl) idEl.textContent = idEl.textContent;
+            }
+        });
+    }
+
+    function highlightMatch(text, query) {
+        if (!query) return text;
+        const idx = text.toLowerCase().indexOf(query);
+        if (idx === -1) return text;
+        return text.slice(0, idx)
+             + '<mark>' + text.slice(idx, idx + query.length) + '</mark>'
+             + text.slice(idx + query.length);
+    }
+
+    function applySubviewFilter(input) {
+        const query = input.value.toLowerCase();
+        const subview = input.closest('.subview');
+        if (input.dataset.filter === 'personas') filterPersonas(subview, query);
+        else filterWorkflows(subview, query);
+    }
+
+    document.addEventListener('input', e => {
+        if (e.target.classList.contains('subview-search')) applySubviewFilter(e.target);
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+            if (e.target.classList.contains('subview-search') && e.target.value) {
+                e.target.value = '';
+                applySubviewFilter(e.target);
+                return;
+            }
             closeHelpPanel();
             closeInlinePersonaEditor();
             closeInlineWorkflowEditor();

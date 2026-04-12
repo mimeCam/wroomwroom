@@ -39,6 +39,15 @@ actor ManualWorkflowRegistry {
             activeWorkflows[id] = workflow
         }
     }
+
+    /// Remove completed/failed workflows older than the given interval.
+    /// Prevents stale "done" counts from accumulating indefinitely (RAM-only state).
+    func sweepCompletedOlderThan(_ interval: TimeInterval = 3600) {
+        let cutoff = Date().addingTimeInterval(-interval)
+        activeWorkflows = activeWorkflows.filter { _, info in
+            info.status == "running" || info.startedAt > cutoff
+        }
+    }
 }
 
 struct ManualWorkflowInfo: Sendable, Content {

@@ -169,7 +169,7 @@ fi
 # fi
 
 echo ""
-echo "Run 'ya hi' to verify that claude-code is authenticated (subscription)"
+echo "Run 'ya hi' to verify that claude-code is authenticated (subscription). Run 'ywa' to authenticate within interactive session."
 
 echo ""
 echo "Cha-ching! 🪽 Installation complete 🪽. See http://localhost:54321/"
