@@ -350,6 +350,48 @@
             .save-btn.error {
                 background: #ef4444;
             }
+
+            /* ── Initialize Knowledge button ── */
+            .init-knowledge-btn {
+                margin-top: 20px;
+                padding: 10px 24px;
+                background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary, var(--accent-primary)) 100%);
+                border: none;
+                border-radius: var(--radius-md);
+                color: #ffffff;
+                font-family: var(--font-body);
+                font-size: 13px;
+                font-weight: 500;
+                letter-spacing: 0.01em;
+                cursor: pointer;
+                box-shadow: 0 1px 3px rgba(124, 92, 255, 0.2);
+                transition: all var(--transition-fast);
+            }
+            .init-knowledge-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(124, 92, 255, 0.3);
+                filter: brightness(1.08);
+            }
+            .init-knowledge-btn:active {
+                transform: scale(0.97);
+                box-shadow: 0 1px 2px rgba(124, 92, 255, 0.2);
+            }
+            .init-knowledge-btn.loading {
+                opacity: 0.7;
+                cursor: wait;
+                pointer-events: none;
+            }
+            .init-knowledge-btn.error {
+                background: #ef4444;
+                box-shadow: 0 1px 3px rgba(239, 68, 68, 0.2);
+            }
+            .init-knowledge-hint {
+                margin-top: 10px;
+                font-size: 12px;
+                color: var(--text-faint);
+                max-width: 240px;
+                line-height: 1.45;
+            }
         </style>
     </head>
     <body class="files-page">
@@ -372,6 +414,8 @@
                         <div class="editor-no-files-icon">📁</div>
                         <div class="editor-no-files-title">No knowledge files yet</div>
                         <div class="editor-no-files-desc">Add knowledge files that this persona can reference.</div>
+                        <button class="init-knowledge-btn" id="initKnowledgeBtn">&#10022; Initialize Knowledge</button>
+                        <div class="init-knowledge-hint">Creates AGENTS.md as a starting point for this persona</div>
                     </div>
                     <div class="editor-empty" id="editorEmpty" style="display:none;">
                         <div class="editor-empty-icon">←</div>

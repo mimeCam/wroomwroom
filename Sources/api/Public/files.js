@@ -348,6 +348,10 @@
 
     document.getElementById('newFileBtn').addEventListener('click', showNewFileInline);
 
+    document.getElementById('initKnowledgeBtn').addEventListener('click', function() {
+        createNewFile('AGENTS.md');
+    });
+
     document.addEventListener('keydown', function(e) {
         if ((e.metaKey || e.ctrlKey) && e.key === 's') {
             e.preventDefault();
