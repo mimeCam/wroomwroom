@@ -148,7 +148,7 @@ else
     OC_CMD="opencode run \"\$PROMPT\""
 fi
 
-_REPORT_FALLBACK="{ [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; }"
+_REPORT_FALLBACK="{ [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || { [ -f $ROOT/_report.md ] && { cat $ROOT/_report.md; rm -f $ROOT/_report.md; } || echo \"\$REPORT\"; }; }; }; }"
 
 OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; REPORT=\$($OC_CMD) && $_REPORT_FALLBACK")
 

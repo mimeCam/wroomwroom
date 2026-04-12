@@ -115,7 +115,7 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
 fi
 
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
-    OCRUN=("bash" "-c" "REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || echo \"\$REPORT\"; }; }; }")
+    OCRUN=("bash" "-c" "REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || { [ -f $ROOT/_report.md ] && { cat $ROOT/_report.md; rm -f $ROOT/_report.md; } || echo \"\$REPORT\"; }; }; }; }")
 # else
 #     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
