@@ -408,12 +408,22 @@ private func preparePersonas(
         for ri in runItems {
             if let p = ri.p {
 
-                let fp = try await preparePersonaFolder(for: p, id: ri.id)
-                guard let fp else {
-                    assertionFailure(); return nil
-                }
+                let usesProjectBinAgent: Bool = {
+                    if case .projectBin = resolveAgent(p.agent, workflowAgent: "") {
+                        return true
+                    }
+                    return false
+                }()
 
-                inner.append(fp)
+                if usesProjectBinAgent {
+                    inner.append("")
+                } else {
+                    let fp = try await preparePersonaFolder(for: p, id: ri.id)
+                    guard let fp else {
+                        assertionFailure(); return nil
+                    }
+                    inner.append(fp)
+                }
             } else if let w = ri.w {
                 inner.append("")
             } else {
@@ -456,6 +466,38 @@ private func preparePersonas(
             }
         }
     }
+}
+
+private enum AgentSource {
+    case projectBin(name: String, path: FilePath)
+    case userLocalBin(name: String, path: FilePath)
+    case workflowFallback(name: String, path: FilePath)
+}
+
+private func resolveAgent(
+    _ agentName: String?, workflowAgent: String
+) -> AgentSource {
+    guard let pa = agentName, pa.notEmpty else {
+        return .workflowFallback(
+            name: workflowAgent,
+            path: Paths.bin.appending(workflowAgent)
+        )
+    }
+    let shortName = String(pa.trimmingPrefix("openloop_"))
+    let prjBin = Paths.curDir
+        .appending("openloop").appending("bin")
+        .appending(shortName)
+    if PathIO.isFileExistent(atPath: prjBin.string) {
+        return .projectBin(name: shortName, path: prjBin)
+    }
+    let userLocalBin = Paths.bin.appending(pa)
+    if PathIO.isFileExistent(atPath: userLocalBin.string) {
+        return .userLocalBin(name: pa, path: userLocalBin)
+    }
+    return .workflowFallback(
+        name: workflowAgent,
+        path: Paths.bin.appending(workflowAgent)
+    )
 }
 
 private struct PreparedRunItem: Hashable, Identifiable {
@@ -634,31 +676,16 @@ private func runGraph(
 
             let systemPrompt = from.persona?.about ?? ""
 
+            let resolved = resolveAgent(from.persona?.agent, workflowAgent: workflowAgent)
             let agent: String
             let agentPath: FilePath
-            if let pa = from.persona?.agent, pa.notEmpty {
-                // Project-specific scripts inside <prj>/openloop/bin does not need `openloop_` prefix.
-                // Only ~/.local/bin/openloop_* should be prefixed.
-                let shortName = String(pa.trimmingPrefix("openloop_"))
-
-                let prjBin = Paths.curDir
-                    .appending("openloop").appending("bin")
-                    .appending(shortName)
-                let userLocalBin = Paths.bin.appending(pa)
-
-                if PathIO.isFileExistent(atPath: prjBin.string) {
-                    agent = shortName
-                    agentPath = prjBin
-                } else if PathIO.isFileExistent(atPath: userLocalBin.string) {
-                    agent = pa
-                    agentPath = userLocalBin
-                } else {
-                    agent = workflowAgent
-                    agentPath = Paths.bin.appending(workflowAgent)
-                }
-            } else {
-                agent = workflowAgent
-                agentPath = Paths.bin.appending(workflowAgent)
+            switch resolved {
+            case .projectBin(let name, let path):
+                agent = name; agentPath = path
+            case .userLocalBin(let name, let path):
+                agent = name; agentPath = path
+            case .workflowFallback(let name, let path):
+                agent = name; agentPath = path
             }
 
             res = try await subprocess(
