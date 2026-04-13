@@ -1,12 +1,12 @@
 {
   "desc" : "Test",
   "agent" : "cc_docker",
-  "name" : "Feature-work on 'api' app",
-  "every_secs" : 0,
-  "ask" : "Noop. Does not apply for manual workflows.",
   "levels" : [
     [
 
     ]
-  ]
+  ],
+  "every_secs" : 0,
+  "ask" : "Noop. Does not apply for manual workflows.",
+  "name" : "Feature-work on 'api' app"
 }

@@ -23,6 +23,35 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentLang = localStorage.getItem('openloop-lang') || 'en';
     let currentHelpDoc = null;
 
+    function toSlug(value) {
+        return value
+            .replace(/([a-z])([A-Z])/g, '$1-$2')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+    }
+
+    function updateSlugPreview(editor) {
+        const idInput = editor.querySelector('[data-field="id"]');
+        const nameInput = editor.querySelector('[data-field="name"]');
+        const preview = editor.querySelector('.slug-preview');
+        if (!preview) return;
+
+        const idVal = idInput ? idInput.value.trim() : '';
+        const nameVal = nameInput ? nameInput.value.trim() : '';
+        const source = idVal || nameVal;
+        const slug = toSlug(source);
+
+        if (slug) {
+            preview.querySelector('.slug-value').textContent = slug;
+            preview.classList.add('visible');
+        } else {
+            preview.classList.remove('visible');
+        }
+    }
+
     function setEditingState(personaList, editingNode) {
         personaList?.classList.add('editing');
         editingNode?.classList.add('is-editing');
@@ -476,6 +505,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button class="picker-tab active" data-tab="personas">Personas</button>
                     <button class="picker-tab" data-tab="workflows">Workflows</button>
                 </div>
+                <div class="selector-search-wrapper">
+                    <svg class="selector-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+                    <input class="selector-search" type="text" placeholder="Search personas…" aria-label="Search personas" autocomplete="off" spellcheck="false">
+                </div>
                 <div class="persona-selector-body">
                     <div class="picker-panel picker-personas-panel">
                         ${personas.length > 0 ? personasHtml : '<div class="persona-selector-empty">No personas available.<br>Create a persona first to add it to this workflow.</div>'}
@@ -505,6 +538,9 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
         });
 
+        const searchInput = selector.querySelector('.selector-search');
+        const searchWrapper = selector.querySelector('.selector-search-wrapper');
+
         selector.querySelectorAll('.picker-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -513,8 +549,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 const targetPanel = tab.dataset.tab;
                 selector.querySelector('.picker-personas-panel').style.display = targetPanel === 'personas' ? '' : 'none';
                 selector.querySelector('.picker-workflows-panel').style.display = targetPanel === 'workflows' ? '' : 'none';
+                searchInput.value = '';
+                const label = targetPanel === 'personas' ? 'personas' : 'workflows';
+                searchInput.placeholder = 'Search ' + label + '…';
+                searchInput.setAttribute('aria-label', 'Search ' + label);
+                clearSelectorSearch(selector);
             });
         });
+
+        searchInput.addEventListener('input', () => applySelectorFilter(selector));
 
         const personaItems = selector.querySelectorAll('.persona-selector-item:not(.workflow-selector-item)');
         personaItems.forEach(item => {
@@ -538,8 +581,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
-                closePersonaSelector();
-                document.removeEventListener('keydown', handleEscape);
+                if (searchInput.value) {
+                    searchInput.value = '';
+                    clearSelectorSearch(selector);
+                } else {
+                    closePersonaSelector();
+                    document.removeEventListener('keydown', handleEscape);
+                }
             }
         };
         document.addEventListener('keydown', handleEscape);
@@ -2465,8 +2513,6 @@ document.addEventListener('DOMContentLoaded', function() {
             clearEditingState();
         }
 
-        const defaultId = `persona-${Date.now()}`;
-
         const creatorHtml = `
             <div class="persona-creator-inline">
                 <div class="creator-header">
@@ -2474,12 +2520,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div class="creator-body">
                     <div class="persona-field">
-                        <label>ID</label>
-                        <input type="text" class="persona-input creator-field" data-field="id" value="${escapeHtml(defaultId)}">
-                    </div>
-                    <div class="persona-field">
                         <label>Name</label>
                         <input type="text" class="persona-input creator-field" data-field="name" placeholder="Enter persona name">
+                    </div>
+                    <div class="persona-field">
+                        <label>ID</label>
+                        <input type="text" class="persona-input creator-field" data-field="id" placeholder="auto-generated from name">
+                        <span class="slug-preview"><span class="slug-arrow">→</span><span class="slug-value"></span></span>
                     </div>
                     <div class="persona-field">
                         <label>Avatar URL</label>
@@ -2522,10 +2569,15 @@ document.addEventListener('DOMContentLoaded', function() {
         currentInlineEditor.addEventListener('focusin', (e) => e.stopPropagation());
 
         const idInput = currentInlineEditor.querySelector('[data-field="id"]');
-        if (idInput) {
-            idInput.focus();
-            idInput.select();
+        const nameInput = currentInlineEditor.querySelector('[data-field="name"]');
+        if (nameInput) {
+            nameInput.focus();
         }
+
+        [idInput, nameInput].forEach(input => {
+            if (input) input.addEventListener('input', () => updateSlugPreview(currentInlineEditor));
+        });
+        updateSlugPreview(currentInlineEditor);
 
         currentInlineEditor.querySelectorAll('.agent-preset-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -2558,8 +2610,6 @@ document.addEventListener('DOMContentLoaded', function() {
             clearEditingState();
         }
 
-        const defaultId = `workflow-${Date.now()}`;
-
         const creatorHtml = `
             <div class="workflow-creator-inline">
                 <div class="creator-header">
@@ -2567,12 +2617,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div class="creator-body">
                     <div class="persona-field">
-                        <label>ID</label>
-                        <input type="text" class="persona-input creator-field" data-field="id" value="${escapeHtml(defaultId)}">
-                    </div>
-                    <div class="persona-field">
                         <label>Name</label>
                         <input type="text" class="persona-input creator-field" data-field="name" placeholder="Enter workflow name">
+                    </div>
+                    <div class="persona-field">
+                        <label>ID</label>
+                        <input type="text" class="persona-input creator-field" data-field="id" placeholder="auto-generated from name">
+                        <span class="slug-preview"><span class="slug-arrow">→</span><span class="slug-value"></span></span>
                     </div>
                     <div class="persona-field">
                         <label>Description</label>
@@ -2657,10 +2708,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         const idInput = currentInlineEditor.querySelector('[data-field="id"]');
-        if (idInput) {
-            idInput.focus();
-            idInput.select();
+        const nameInput = currentInlineEditor.querySelector('[data-field="name"]');
+        if (nameInput) {
+            nameInput.focus();
         }
+
+        [idInput, nameInput].forEach(input => {
+            if (input) input.addEventListener('input', () => updateSlugPreview(currentInlineEditor));
+        });
+        updateSlugPreview(currentInlineEditor);
 
         currentInlineEditor.querySelector('.creator-cancel-btn').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2682,17 +2738,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = {};
         fields.forEach(field => {
             const value = field.value.trim();
-            if (field.dataset.field === 'id') {
-                data.id = value.replace(/[^a-z0-9_-]/g, '-').toLowerCase() || null;
-            } else {
-                data[field.dataset.field] = value;
-            }
+            data[field.dataset.field] = value;
         });
 
         if (!data.name) {
             alert('Name is required');
             return;
         }
+
+        data.id = toSlug(data.id || data.name) || null;
 
         createBtn.textContent = 'Creating...';
         createBtn.disabled = true;
@@ -2734,11 +2788,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = {};
         fields.forEach(field => {
             const value = field.value.trim();
-            if (field.dataset.field === 'id') {
-                data.id = value.replace(/[^a-z0-9_-]/g, '-').toLowerCase() || `workflow-${Date.now()}`;
-            } else {
-                data[field.dataset.field] = value;
-            }
+            data[field.dataset.field] = value;
         });
 
         if (!data.name) {
@@ -2746,10 +2796,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        if (data.id && !/^[a-zA-Z0-9_-]+$/.test(data.id)) {
-            alert('ID can only contain letters, digits, underscores and hyphens');
-            return;
-        }
+        data.id = toSlug(data.id || data.name) || `workflow-${Date.now()}`;
 
         createBtn.textContent = 'Creating...';
         createBtn.disabled = true;
@@ -2906,6 +2953,56 @@ document.addEventListener('DOMContentLoaded', function() {
         return text.slice(0, idx)
              + '<mark>' + text.slice(idx, idx + query.length) + '</mark>'
              + text.slice(idx + query.length);
+    }
+
+    function filterSelectorItems(panel, query, selector) {
+        let anyVisible = false;
+        panel.querySelectorAll('.persona-selector-item').forEach(item => {
+            const name = (item.querySelector('.persona-selector-name')?.textContent || '').toLowerCase();
+            const role = (item.querySelector('.persona-selector-role')?.textContent || '').toLowerCase();
+            const id = (item.dataset.personaId || item.dataset.workflowId || '').toLowerCase();
+            const visible = !query || name.includes(query) || role.includes(query) || id.includes(query);
+            item.style.display = visible ? '' : 'none';
+            if (visible) anyVisible = true;
+            const label = item.querySelector('.persona-selector-name');
+            if (label) label.innerHTML = (query && visible) ? highlightMatch(label.textContent, query) : label.textContent;
+        });
+        toggleNoResults(panel, query, !anyVisible);
+    }
+
+    function applySelectorFilter(selector) {
+        const query = selector.querySelector('.selector-search').value.toLowerCase();
+        const activeTab = selector.querySelector('.picker-tab.active').dataset.tab;
+        const panel = activeTab === 'personas'
+            ? selector.querySelector('.picker-personas-panel')
+            : selector.querySelector('.picker-workflows-panel');
+        filterSelectorItems(panel, query, selector);
+    }
+
+    function clearSelectorSearch(selector) {
+        const searchInput = selector.querySelector('.selector-search');
+        if (searchInput) searchInput.value = '';
+        selector.querySelectorAll('.persona-selector-item').forEach(item => {
+            item.style.display = '';
+            const label = item.querySelector('.persona-selector-name');
+            if (label) label.textContent = label.textContent;
+        });
+        selector.querySelectorAll('.picker-panel').forEach(p => {
+            const noResults = p.querySelector('.selector-no-results');
+            if (noResults) noResults.remove();
+        });
+    }
+
+    function toggleNoResults(panel, query, show) {
+        let el = panel.querySelector('.selector-no-results');
+        if (!show) { if (el) el.remove(); return; }
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'selector-no-results';
+            panel.appendChild(el);
+        }
+        const type = panel.classList.contains('picker-personas-panel') ? 'personas' : 'workflows';
+        el.innerHTML = query ? 'No matching ' + type + '.<br>Try a different search term.' : '';
     }
 
     function applySubviewFilter(input) {
