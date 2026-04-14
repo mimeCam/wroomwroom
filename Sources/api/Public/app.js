@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let globalDragState = { active: false, personaId: null, personaName: null };
     let currentLang = localStorage.getItem('openloop-lang') || 'en';
     let currentHelpDoc = null;
+    let instanceParentMap = {};
+    let parentInstanceData = {};
 
     function toSlug(value) {
         return value
@@ -62,13 +64,176 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelector('.persona-node.is-editing')?.classList.remove('is-editing');
     }
 
-    function getInstanceColor(path) {
+    function getInstanceColor(path, rootPath, depth) {
+        const hueSource = rootPath || path;
         let hash = 0;
-        for (let i = 0; i < path.length; i++) {
-            hash = path.charCodeAt(i) + ((hash << 5) - hash);
+        for (let i = 0; i < hueSource.length; i++) {
+            hash = hueSource.charCodeAt(i) + ((hash << 5) - hash);
         }
         const hue = Math.abs(hash % 360);
-        return `hsl(${hue}, 35%, 92%)`;
+        const d = depth || 0;
+        const saturation = Math.max(22, 40 - d * 8);
+        const lightness = Math.min(97, 90 + d * 3);
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    function getInstanceHue(path, rootPath) {
+        const hueSource = rootPath || path;
+        let hash = 0;
+        for (let i = 0; i < hueSource.length; i++) {
+            hash = hueSource.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return Math.abs(hash % 360);
+    }
+
+    // ─── Parent Instance Sections ───
+
+    function getParentChain(path) {
+        const chain = [];
+        let current = path;
+        const visited = new Set();
+        while (instanceParentMap[current] !== undefined && !visited.has(current)) {
+            visited.add(current);
+            const parent = instanceParentMap[current];
+            if (!parent || !instanceParentMap.hasOwnProperty(parent)) break;
+            chain.push(parent);
+            current = parent;
+        }
+        return chain;
+    }
+
+    function renderParentSectionsHtml(parentPaths, mode, currentInstancePath) {
+        if (!parentPaths || parentPaths.length === 0) return '';
+        let sections = '';
+        parentPaths.forEach(pp => {
+            const parts = pp.split('/').filter(c => c.length > 0);
+            const name = parts[parts.length - 1] || pp;
+            const hue = getInstanceHue(pp, pp);
+            sections += `
+            <div class="parent-section" data-parent-path="${escapeHtml(pp)}" data-current-instance-path="${escapeHtml(currentInstancePath || '')}">
+                <div class="parent-section-header" role="button" aria-expanded="false" tabindex="0" data-mode="${mode}">
+                    <span class="parent-section-dot" style="background:hsl(${hue}, 45%, 58%)"></span>
+                    <svg class="parent-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    <span class="parent-section-label">Parent: ${escapeHtml(name)}</span>
+                    <span class="parent-section-count">—</span>
+                </div>
+                <div class="parent-section-body"></div>
+            </div>`;
+        });
+        return `<div class="parent-sections-divider"></div>${sections}`;
+    }
+
+    async function fetchParentPersonas(parentPath) {
+        if (!parentInstanceData[parentPath]) parentInstanceData[parentPath] = {};
+        if (parentInstanceData[parentPath].personas) return parentInstanceData[parentPath].personas;
+        const personas = await fetchPersonas(parentPath);
+        parentInstanceData[parentPath].personas = personas;
+        return personas;
+    }
+
+    async function fetchParentWorkflows(parentPath) {
+        if (!parentInstanceData[parentPath]) parentInstanceData[parentPath] = {};
+        if (parentInstanceData[parentPath].workflows) return parentInstanceData[parentPath].workflows;
+        const workflows = await fetchWorkflows(parentPath);
+        parentInstanceData[parentPath].workflows = workflows;
+        return workflows;
+    }
+
+    async function toggleParentSectionExpand(header) {
+        const section = header.closest('.parent-section');
+        const body = section.querySelector('.parent-section-body');
+        const parentPath = section.dataset.parentPath;
+        const mode = header.dataset.mode;
+        const isExpanded = header.getAttribute('aria-expanded') === 'true';
+
+        if (isExpanded) {
+            header.setAttribute('aria-expanded', 'false');
+            body.classList.remove('open');
+            return;
+        }
+
+        header.setAttribute('aria-expanded', 'true');
+
+        if (!body.innerHTML.trim()) {
+            body.innerHTML = '<div class="parent-section-empty">Loading\u2026</div>';
+            body.classList.add('open');
+            try {
+                if (mode === 'personas') {
+                    const personas = await fetchParentPersonas(parentPath);
+                    const countBadge = header.querySelector('.parent-section-count');
+                    if (countBadge) countBadge.textContent = personas.length + ' persona' + (personas.length !== 1 ? 's' : '');
+                    body.innerHTML = personas.length === 0
+                        ? '<div class="parent-section-empty">No personas in this instance.</div>'
+                        : '<div class="persona-list">' + renderPersonasHtml(personas, parentPath) + '</div>';
+                } else if (mode === 'workflows') {
+                    const workflows = await fetchParentWorkflows(parentPath);
+                    const countBadge = header.querySelector('.parent-section-count');
+                    if (countBadge) countBadge.textContent = workflows.length + ' workflow' + (workflows.length !== 1 ? 's' : '');
+                    body.innerHTML = workflows.length === 0
+                        ? '<div class="parent-section-empty">No workflows in this instance.</div>'
+                        : '<div class="workflow-list">' + renderWorkflowsHtml(workflows, parentPath) + '</div>';
+                }
+            } catch (err) {
+                console.error('Failed to load parent instance data:', err);
+                body.innerHTML = '<div class="parent-section-error">Failed to load. <button class="parent-section-retry">Retry</button></div>';
+            }
+        } else {
+            body.classList.add('open');
+        }
+
+        // Re-apply active search filter to include newly rendered items
+        const subview = section.closest('.subview');
+        if (subview) {
+            const searchInput = subview.querySelector('.subview-search');
+            if (searchInput && searchInput.value) applySubviewFilter(searchInput);
+        }
+    }
+
+    async function togglePickerParentSection(header, selector, instancePath, workflowId) {
+        const section = header.closest('.parent-section');
+        const body = section.querySelector('.parent-section-body');
+        const parentPath = section.dataset.parentPath;
+        const mode = header.dataset.mode;
+        const isExpanded = header.getAttribute('aria-expanded') === 'true';
+
+        if (isExpanded) {
+            header.setAttribute('aria-expanded', 'false');
+            body.classList.remove('open');
+            return;
+        }
+
+        header.setAttribute('aria-expanded', 'true');
+
+        if (!body.innerHTML.trim()) {
+            body.innerHTML = '<div class="parent-section-empty">Loading\u2026</div>';
+            body.classList.add('open');
+            try {
+                if (mode === 'personas') {
+                    const pp = await fetchParentPersonas(parentPath);
+                    const countBadge = header.querySelector('.parent-section-count');
+                    if (countBadge) countBadge.textContent = pp.length + ' item' + (pp.length !== 1 ? 's' : '');
+                    body.innerHTML = pp.length === 0
+                        ? '<div class="parent-section-empty">No personas in this instance.</div>'
+                        : pp.map(p => `<div class="persona-selector-item" data-persona-id="${escapeHtml(p.id)}">${getAvatarHtml(p.avatar)}<div class="persona-selector-info"><div class="persona-selector-name-row"><span class="persona-selector-name">${escapeHtml(p.name)}</span>${p.role ? `<span class="persona-selector-role">${escapeHtml(p.role)}</span>` : ''}</div>${p.about ? `<span class="persona-selector-about">${escapeHtml(p.about)}</span>` : ''}</div></div>`).join('');
+                } else if (mode === 'workflows') {
+                    const ww = await fetchParentWorkflows(parentPath);
+                    const filtered = ww.filter(w => w.id !== workflowId);
+                    const countBadge = header.querySelector('.parent-section-count');
+                    if (countBadge) countBadge.textContent = filtered.length + ' item' + (filtered.length !== 1 ? 's' : '');
+                    body.innerHTML = filtered.length === 0
+                        ? '<div class="parent-section-empty">No workflows in this instance.</div>'
+                        : filtered.map(w => `<div class="persona-selector-item workflow-selector-item" data-workflow-id="${escapeHtml(w.id)}"><span class="workflow-selector-icon">\u25CB</span><div class="persona-selector-info"><div class="persona-selector-name-row"><span class="persona-selector-name">${escapeHtml(w.name)}</span></div>${w.desc ? `<span class="persona-selector-about">${escapeHtml(w.desc)}</span>` : ''}</div></div>`).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load parent instance data:', err);
+                body.innerHTML = '<div class="parent-section-error">Failed to load. <button class="parent-section-retry">Retry</button></div>';
+            }
+        } else {
+            body.classList.add('open');
+        }
+
+        // Re-apply active search filter to include newly rendered items
+        applySelectorFilter(selector);
     }
 
     async function fetchInstances(isAutoRefresh = false) {
@@ -108,6 +273,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function buildTreeFromPaths(instancesData) {
+        // Build a map of path -> parentPath from API data
+        const parentMap = {};
+        instancesData.forEach(d => {
+            parentMap[d.path] = d.parentPath || null;
+        });
+        instanceParentMap = parentMap;
+
+        // Compute depth and rootPath for each instance
+        function computeDepthAndRoot(path) {
+            let depth = 0;
+            let current = path;
+            const visited = new Set();
+            while (parentMap[current] && !visited.has(current)) {
+                visited.add(current);
+                const parent = parentMap[current];
+                // Only count if parent actually exists in our instance list
+                if (!parentMap.hasOwnProperty(parent)) break;
+                depth++;
+                current = parent;
+            }
+            return { depth, rootPath: current };
+        }
+
         const instances = instancesData.map(instanceData => {
             const path = instanceData.path;
             const parts = path.split('/').filter(c => c.length > 0);
@@ -119,6 +307,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 instanceStateCache[path] = state;
                 console.log('DEBUG: Instance state for', path, ':', state);
             }
+            const { depth, rootPath } = computeDepthAndRoot(path);
             return {
                 name: name,
                 fullPath: path,
@@ -129,24 +318,97 @@ document.addEventListener('DOMContentLoaded', function() {
                 workflows: instanceWorkflows[path] || [],
                 state: state,
                 manualActive: instanceData.manualActive || 0,
-                manualCompleted: instanceData.manualCompleted || 0
+                manualCompleted: instanceData.manualCompleted || 0,
+                depth: depth,
+                rootPath: rootPath,
+                parentPath: parentMap[path] || null
             };
         });
 
+        // Compute child counts for each instance
+        const childCounts = {};
+        instances.forEach(inst => {
+            if (inst.parentPath) {
+                childCounts[inst.parentPath] = (childCounts[inst.parentPath] || 0) + 1;
+            }
+        });
+        instances.forEach(inst => {
+            inst.childCount = childCounts[inst.fullPath] || 0;
+        });
+
+        // Sort: depth-first traversal grouped by root, siblings alphabetical
+        const byRoot = {};
+        instances.forEach(inst => {
+            const r = inst.rootPath;
+            if (!byRoot[r]) byRoot[r] = [];
+            byRoot[r].push(inst);
+        });
+        Object.values(byRoot).forEach(group => {
+            group.sort((a, b) => {
+                if (a.depth !== b.depth) return a.depth - b.depth;
+                return a.name.localeCompare(b.name);
+            });
+        });
+        // Roots in alphabetical order
+        const rootOrder = Object.keys(byRoot).sort((a, b) => {
+            const nameA = a.split('/').filter(c => c.length > 0).pop() || a;
+            const nameB = b.split('/').filter(c => c.length > 0).pop() || b;
+            return nameA.localeCompare(nameB);
+        });
+        // Flatten into depth-first order
+        const sorted = [];
+        function addChildren(rootPath, parentPath, depth) {
+            const children = byRoot[rootPath].filter(i => {
+                if (depth === 0) return i.depth === 0 && i.fullPath === rootPath;
+                return i.depth === depth && parentMap[i.fullPath] === parentPath;
+            });
+            children.forEach(child => {
+                sorted.push(child);
+                addChildren(rootPath, child.fullPath, depth + 1);
+            });
+        }
+        rootOrder.forEach(root => {
+            addChildren(root, null, 0);
+        });
+
         return {
-            instances: instances
+            instances: sorted
         };
     }
 
     function renderTree(tree) {
-        const html = `
+        // Group instances into family wrappers for the carpet background
+        let html = '';
+        let currentRoot = null;
+        let familyInstances = [];
+
+        function flushFamily() {
+            if (familyInstances.length === 0) return;
+            const hue = getInstanceHue(familyInstances[0].fullPath, familyInstances[0].rootPath);
+            html += `<div class="instance-family" style="--hue:${hue}">`;
+            familyInstances.forEach(inst => {
+                html += renderInstanceNode(inst);
+            });
+            html += `</div>`;
+        }
+
+        tree.instances.forEach(instance => {
+            if (instance.rootPath !== currentRoot) {
+                flushFamily();
+                currentRoot = instance.rootPath;
+                familyInstances = [];
+            }
+            familyInstances.push(instance);
+        });
+        flushFamily();
+
+        content.innerHTML = `
             <div class="tree-container" role="tree" aria-label="Instance tree">
                 <div class="instances-list">
-                    ${tree.instances.map(instance => renderInstanceNode(instance)).join('')}
+                    ${html}
                 </div>
             </div>
         `;
-        content.innerHTML = html;
 
         tree.instances.filter(i => i.expanded).forEach(instance => {
             const node = document.querySelector(`.instance-node[data-path="${escapeHtml(instance.fullPath)}"]`);
@@ -156,19 +418,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function formatPath(path, instanceName) {
-        const dirPath = path || '/';
-        if (dirPath.length <= 40) {
-            return dirPath;
-        }
-        const parts = dirPath.split('/');
-        if (parts.length <= 3) return dirPath;
-        return '/' + parts[1] + '/.../' + parts.slice(-2).join('/');
+    function formatPath(path, parentPath) {
+        if (!path) return '/';
+        if (!parentPath || parentPath === path) return escapeHtml(path);
+        const suffix = path.slice(parentPath.length + 1); // skip the '/' separator
+        const sharedPrefix = parentPath.length > 35
+            ? '…/'
+            : escapeHtml(parentPath) + '/';
+        return `<span class="path-shared">${sharedPrefix}</span><span class="path-unique">${escapeHtml(suffix)}</span>`;
     }
 
     function renderInstanceNode(instance) {
-        const pathBreadcrumb = formatPath(instance.fullPath, instance.name);
-        const bgColor = getInstanceColor(instance.fullPath);
+        const pathHtml = formatPath(instance.fullPath, instance.parentPath);
+        const depth = instance.depth || 0;
+        const rootPath = instance.rootPath || instance.fullPath;
+        const bgColor = getInstanceColor(instance.fullPath, rootPath, depth);
+        const hue = getInstanceHue(instance.fullPath, rootPath);
 
         let statusHtml = '';
         let isRunning = false;
@@ -195,30 +460,42 @@ document.addEventListener('DOMContentLoaded', function() {
         workflowCountHtml = getWorkflowCountHtml(instance.fullPath, instance.state);
         manualBadgesHtml = getManualWorkflowBadgesHtml(instance.manualActive, instance.manualCompleted);
 
+        let childCountHtml = '';
+        if (instance.childCount > 0) {
+            const label = instance.childCount === 1 ? '1 child' : `${instance.childCount} children`;
+            childCountHtml = `<span class="parent-child-count">${label}</span>`;
+        }
+
         if (instance.expanded) {
             const personasHtml = renderPersonasHtml(instance.personas, instance.fullPath);
             const workflowsHtml = renderWorkflowsHtml(instance.workflows, instance.fullPath);
             expandedContentHtml = renderExpandedContentHtml(instance.fullPath, personasHtml, workflowsHtml);
         }
 
-        const badgesRowHtml = (personaCountHtml || workflowCountHtml || manualBadgesHtml)
-            ? `<div class="instance-badges">${personaCountHtml}${workflowCountHtml}${manualBadgesHtml}</div>`
+        const badgesRowHtml = (personaCountHtml || workflowCountHtml || manualBadgesHtml || childCountHtml)
+            ? `<div class="instance-badges">${personaCountHtml}${workflowCountHtml}${manualBadgesHtml}${childCountHtml}</div>`
             : '';
+
+        const iconSaturation = Math.max(25, 50 - depth * 8);
+        const iconLightness = Math.min(72, 55 + depth * 6);
+        const iconColor = `hsl(${hue}, ${iconSaturation}%, ${iconLightness}%)`;
 
         return `
             <div class="instance-node ${instance.expanded ? 'expanded' : ''}"
                  role="treeitem"
                  aria-expanded="${instance.expanded}"
-                 data-path="${instance.fullPath}">
+                 data-path="${instance.fullPath}"
+                 data-depth="${depth}"
+                 style="--indent:${depth};--hue:${hue};--depth:${depth}">
                 <div class="instance-row" style="background-color: ${bgColor}">
                     <div class="instance-header">
                         <span class="instance-toggle">${instance.expanded ? '▾' : '▸'}</span>
-                        <span class="instance-icon">●</span>
+                        <span class="instance-icon" style="color:${iconColor};-webkit-text-fill-color:${iconColor}">●</span>
                          <span class="instance-name">${escapeHtml(instance.name)}</span><span class="info-icon" data-doc="instance" title="What is an instance?">ⓘ</span>
                         ${statusHtml}
                     </div>
                     <div class="instance-path-row">
-                        <span class="instance-path" title="${escapeHtml(instance.fullPath)}">${escapeHtml(instance.fullPath)}</span>
+                        <span class="instance-path" title="${escapeHtml(instance.fullPath)}">${pathHtml}</span>
                     </div>
                     ${badgesRowHtml}
                 </div>
@@ -466,6 +743,9 @@ document.addEventListener('DOMContentLoaded', function() {
         closePersonaSelector();
 
         const filteredWorkflows = (allWorkflows || []).filter(w => w.id !== workflowId);
+        const parentChain = getParentChain(instancePath);
+        const pickerParentPersonasHtml = renderParentSectionsHtml(parentChain, 'personas');
+        const pickerParentWorkflowsHtml = renderParentSectionsHtml(parentChain, 'workflows');
 
         const personasHtml = personas.map(p => `
             <div class="persona-selector-item" data-persona-id="${escapeHtml(p.id)}">
@@ -511,10 +791,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div class="persona-selector-body">
                     <div class="picker-panel picker-personas-panel">
-                        ${personas.length > 0 ? personasHtml : '<div class="persona-selector-empty">No personas available.<br>Create a persona first to add it to this workflow.</div>'}
+                        ${personas.length > 0 ? personasHtml : ''}
+                        ${pickerParentPersonasHtml}
+                        ${personas.length === 0 && parentChain.length === 0 ? '<div class="persona-selector-empty">No personas available.<br>Create a persona first to add it to this workflow.</div>' : ''}
                     </div>
                     <div class="picker-panel picker-workflows-panel" style="display:none">
-                        ${filteredWorkflows.length > 0 ? workflowsHtml : '<div class="persona-selector-empty">No other workflows available.<br>Create another workflow to use it as an inner step here.</div>'}
+                        ${filteredWorkflows.length > 0 ? workflowsHtml : ''}
+                        ${pickerParentWorkflowsHtml}
+                        ${filteredWorkflows.length === 0 && parentChain.length === 0 ? '<div class="persona-selector-empty">No other workflows available.<br>Create another workflow to use it as an inner step here.</div>' : ''}
                     </div>
                 </div>
             </div>
@@ -535,6 +819,36 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         selector.addEventListener('click', (e) => {
+            const parentHeader = e.target.closest('.parent-section-header');
+            if (parentHeader) {
+                e.stopPropagation();
+                togglePickerParentSection(parentHeader, selector, instancePath, workflowId);
+                return;
+            }
+            const parentItem = e.target.closest('.parent-section-body .persona-selector-item');
+            if (parentItem) {
+                e.stopPropagation();
+                const parentPath = parentItem.closest('.parent-section').dataset.parentPath;
+                const parentP = (parentInstanceData[parentPath] || {}).personas || [];
+                const merged = personas.concat(parentP);
+                if (parentItem.classList.contains('workflow-selector-item')) {
+                    addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, ':' + parentItem.dataset.workflowId, merged);
+                } else {
+                    addPersonaToLevel(editor, instancePath, workflowId, levelIndex, slotIndex, parentItem.dataset.personaId, merged);
+                }
+                closePersonaSelector();
+                return;
+            }
+            const retryBtn = e.target.closest('.parent-section-retry');
+            if (retryBtn) {
+                e.stopPropagation();
+                const section = retryBtn.closest('.parent-section');
+                const hdr = section.querySelector('.parent-section-header');
+                section.querySelector('.parent-section-body').innerHTML = '';
+                hdr.setAttribute('aria-expanded', 'false');
+                togglePickerParentSection(hdr, selector, instancePath, workflowId);
+                return;
+            }
             e.stopPropagation();
         });
 
@@ -741,7 +1055,10 @@ document.addEventListener('DOMContentLoaded', function() {
         node.setAttribute('aria-expanded', expanded);
 
         const instanceRow = node.querySelector('.instance-row');
-        const bgColor = getInstanceColor(path);
+        const depth = parseInt(node.dataset.depth) || 0;
+        const rootPath = node.style.getPropertyValue('--hue') ? path : path;
+        const hue = parseInt(node.style.getPropertyValue('--hue')) || getInstanceHue(path, path);
+        const bgColor = getInstanceColor(path, depth === 0 ? path : path, depth);
         if (instanceRow) {
             instanceRow.style.backgroundColor = bgColor;
             const state = instanceStateCache[path];
@@ -881,8 +1198,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <input class="subview-search" type="text" placeholder="Filter…" data-filter="personas" data-instance-path="${escapeHtml(path)}" aria-label="Filter personas" autocomplete="off" spellcheck="false">
                         </div>
                     </div>
-                    <div class="persona-list">${personasHtml}</div>
                     <button class="add-item-btn" data-action="create-persona" data-instance-path="${escapeHtml(path)}">+ Add Persona</button>
+                    <div class="persona-list">${personasHtml}</div>
+                    ${renderParentSectionsHtml(getParentChain(path), 'personas', path)}
                 </div>
                 <div class="subview workflows-column">
                     <div class="subview-header">
@@ -892,8 +1210,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             <input class="subview-search" type="text" placeholder="Filter…" data-filter="workflows" data-instance-path="${escapeHtml(path)}" aria-label="Filter workflows" autocomplete="off" spellcheck="false">
                         </div>
                     </div>
-                    <div class="workflow-list">${workflowsHtml}</div>
                     <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
+                    <div class="workflow-list">${workflowsHtml}</div>
                     <div class="manual-workflows-section">
                         <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
                         <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
@@ -1088,6 +1406,7 @@ document.addEventListener('DOMContentLoaded', function() {
         expandedInstances.clear();
         instancePersonas = {};
         instanceWorkflows = {};
+        parentInstanceData = {};
         closeInlinePersonaEditor();
         resetCountdown();
         fetchInstances();
@@ -1095,6 +1414,24 @@ document.addEventListener('DOMContentLoaded', function() {
     
     content.addEventListener('click', (e) => {
         if (currentInlineEditor && currentInlineEditor.contains(e.target)) {
+            return;
+        }
+
+        const parentSectionHeader = e.target.closest('.parent-section-header');
+        if (parentSectionHeader && parentSectionHeader.closest('.expanded-content')) {
+            e.stopPropagation();
+            toggleParentSectionExpand(parentSectionHeader);
+            return;
+        }
+
+        const parentRetryBtn = e.target.closest('.parent-section-retry');
+        if (parentRetryBtn && parentRetryBtn.closest('.expanded-content')) {
+            e.stopPropagation();
+            const section = parentRetryBtn.closest('.parent-section');
+            const hdr = section.querySelector('.parent-section-header');
+            section.querySelector('.parent-section-body').innerHTML = '';
+            hdr.setAttribute('aria-expanded', 'false');
+            toggleParentSectionExpand(hdr);
             return;
         }
 
@@ -1403,6 +1740,14 @@ document.addEventListener('DOMContentLoaded', function() {
         clearEditingState();
     }
 
+    function resolveLogInstancePath(personaNode, defaultPath) {
+        const parentSection = personaNode.closest('.parent-section');
+        if (parentSection && parentSection.dataset.currentInstancePath) {
+            return parentSection.dataset.currentInstancePath;
+        }
+        return defaultPath;
+    }
+
     async function openInlinePersonaEditor(personaNode, instancePath, personaId) {
         closeInlinePersonaEditor();
 
@@ -1411,13 +1756,15 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) throw new Error('Failed to load persona');
             const persona = await response.json();
 
+            const logInstancePath = resolveLogInstancePath(personaNode, instancePath);
+
             let logsOffset = 0;
             const logsCount = 5;
             let logsTotal = 0;
             let currentLogs = [];
 
             const refreshLogs = async (offset) => {
-                const logsData = await fetchPersonaLogs(instancePath, personaId, offset, logsCount);
+                const logsData = await fetchPersonaLogs(logInstancePath, personaId, offset, logsCount);
                 logsOffset = logsData.offset || 0;
                 logsTotal = logsData.total || 0;
                 currentLogs = logsData.logs || [];
@@ -1841,6 +2188,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker">oc_docker</button>
                             <button type="button" class="preset-btn agent-preset-btn" data-agent="oc_docker-swift">oc_docker-swift</button>
                         </div>
+                        <div class="wf-ask-field">
+                            <label>Ask</label>
+                            <textarea class="wf-ask-input" data-field="ask" rows="3" placeholder="Default task prompt for this workflow...">${escapeHtml(workflow.ask || '')}</textarea>
+                        </div>
                         <span class="wf-subtitle">Workflow Levels <span class="wf-hint">(drag personas from the left or click +)</span></span>
                     </div>
                     <div class="wf-body">
@@ -1927,6 +2278,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     const value = e.target.value.trim();
                     if (value !== e.target.defaultValue) {
                         saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'agent', value);
+                        e.target.defaultValue = value;
+                    }
+                });
+            }
+
+            const askInput = currentInlineEditor.querySelector('.wf-ask-input');
+            if (askInput) {
+                askInput.defaultValue = askInput.value;
+                askInput.addEventListener('blur', (e) => {
+                    const value = e.target.value.trim();
+                    if (value !== e.target.defaultValue) {
+                        saveWorkflowField(currentInlineEditor, instancePath, workflowId, 'ask', value);
                         e.target.defaultValue = value;
                     }
                 });
@@ -3026,6 +3389,11 @@ document.addEventListener('DOMContentLoaded', function() {
             closeHelpPanel();
             closeInlinePersonaEditor();
             closeInlineWorkflowEditor();
+        }
+
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('parent-section-header')) {
+            e.preventDefault();
+            e.target.click();
         }
     });
 });

@@ -33,6 +33,7 @@ struct InstanceHandler: Sendable {
 
                 instances.append(InstanceInfo(
                     path: path,
+                    parentPath: nil,
                     state: stateInfo,
                     manualActive: manualActive,
                     manualCompleted: manualCompleted
@@ -47,11 +48,19 @@ struct InstanceHandler: Sendable {
 
                 instances.append(InstanceInfo(
                     path: path,
+                    parentPath: nil,
                     state: stateInfo,
                     manualActive: manualActive,
                     manualCompleted: manualCompleted
                 ))
             }
+        }
+
+        let parentPaths = InstanceHandler.computeParentPaths(
+            instances.map { $0.path }
+        )
+        for i in instances.indices {
+            instances[i].parentPath = parentPaths[i]
         }
 
         return InstanceListResponse(instances: instances)
@@ -99,6 +108,7 @@ struct InstanceHandler: Sendable {
 extension InstanceHandler {
     struct InstanceInfo: Content, Sendable {
         var path: String
+        var parentPath: String?
         var state: InstanceStateInfo?
         var manualActive: Int
         var manualCompleted: Int
@@ -116,5 +126,23 @@ extension InstanceHandler {
         var lastLoopAtUnixMs: Int64
         var activeRunningWorkflows: Int
         var inactiveWorkflows: Int
+    }
+
+    // O(n²) on instance count — fine for typical n < 20
+    static func computeParentPaths(_ paths: [String]) -> [String?] {
+        let sorted = paths.sorted { $0.count < $1.count }
+        return paths.map { path in findParent(for: path, among: sorted) }
+    }
+
+    static func findParent(for path: String, among candidates: [String]) -> String? {
+        candidates
+            .filter { isStrictParentPath($0, of: path) }
+            .max(by: { $0.count < $1.count })
+    }
+
+    static func isStrictParentPath(_ candidate: String, of path: String) -> Bool {
+        guard path.hasPrefix(candidate), candidate != path else { return false }
+        let idx = candidate.endIndex
+        return candidate.last == "/" || path[idx] == "/"
     }
 }
