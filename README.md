@@ -47,9 +47,9 @@ source install.sh
 See [kickstarters repo](https://github.com/mimeCam/kickstarters) for real projects & bootstraps.
 
 
-## Development
+## Make it yours
 
-Use openloop to develop openloop: launch `api-work` manually with feature or bugfix description. For terminal shortcut, run:
+To add a feature or fix a bug in openloop, launch `api-work` workflow manually from the web. For terminal shortcut, run:
 ```bash
 ./api-or-frontend-work "ask ..."
 ```

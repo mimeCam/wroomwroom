@@ -17,6 +17,9 @@ SUFFIX="$2"
 
 shift 2
 
+PARENT="$1"
+shift
+
 if [ -n "$API_KEY" ] && [ -z "$API_ENDPOINT" ]; then
     echo "Error: API_ENDPOINT is required when API_KEY is set" >&2
     exit 1
@@ -68,12 +71,14 @@ if [ -z "$PROMPT" ]; then
 fi
 
 ROOT="$PWD"
+PARENT="${PARENT:-$ROOT}"
+if [[ "$PARENT" != "$HOME"/* ]]; then
+    echo "ERR. PARENT must be inside \$HOME. Got: $PARENT" >&2; exit 1
+fi
 if [ ! -d "$ROOT/openloop" ]; then
     echo "Error: openloop directory not found in $ROOT" >&2
     exit 1
 fi
-if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
-
 # Determine MCP config path with priority
 MCP_CONFIG_PATH=""
 USE_STRICT_MCP=""
@@ -151,9 +156,9 @@ fi
 [ -f "$HOME/.gitconfig" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitconfig:/home/node/.gitconfig:ro")
 
 if [ "${MODE}" == "plan" ]; then
-    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT:ro")
+    VOLUME_MOUNTS+=(-v "$PARENT:$PARENT:ro")
 else
-    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
+    VOLUME_MOUNTS+=(-v "$PARENT:$PARENT")
 fi
 
 if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
@@ -163,7 +168,10 @@ if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
 else
     PRJ="$ROOT/openloop"
 
-    VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
+    if [[ "$PERSONA" != "$HOME"/* ]]; then
+        echo "ERR. PERSONA must be inside \$HOME. Got: $PERSONA" >&2; exit 1
+    fi
+    VOLUME_MOUNTS+=(-v "$PERSONA:$ROOT/openloop:ro")
 fi
 
 YOLO_STDIN=""
@@ -176,6 +184,9 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     VOLUME_MOUNTS+=(-v "$YOLO_STDIN:$ROOT/_reports:ro")
     YOLO_STDIN=""
 fi
+
+REPORT_DIR=$(mktemp -d)
+VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
 
 # Build claude command following yolo_claude.sh pattern
 SKIP_PERMISSIONS_FLAG=""
@@ -205,13 +216,18 @@ if [ -n "$SYSTEM_PROMPT" ]; then
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
 fi
 
-# if [ "${MODE}" == "plan" ]; then # every persona asked to summarize to ~/_report.md now, even bottom level
-    # CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f \"$ROOT/_report.md\" ] && cat \"$ROOT/_report.md\" || echo \"\$REPORT\"; }; } "
-    CLAUDE_CMD="REPORT=\$(${CLAUDE_CMD}) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || { [ -f $ROOT/_report.md ] && { cat $ROOT/_report.md; rm -f $ROOT/_report.md; } || echo \"\$REPORT\"; }; }; }; } "
-# fi
+read_report() {
+    local stdout="$1"
+    [ -s "$REPORT_DIR/report.md" ] && { cat "$REPORT_DIR/report.md"; rm -rf "$REPORT_DIR"; return; }
+    rm -rf "$REPORT_DIR"
+    echo "$stdout"
+}
+
+CC_OUTPUT=""
+CC_EXIT=0
 
 if [ "$use_tier" = true ]; then
-    $DOCKER run --rm \
+    CC_OUTPUT=$($DOCKER run --rm \
         --pids-limit=500 \
         --init \
         -e ANTHROPIC_LOG=error \
@@ -225,9 +241,9 @@ if [ "$use_tier" = true ]; then
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$CLAUDE_CMD"
+        $IMAGE bash -c "$CLAUDE_CMD"); CC_EXIT=$?
 else
-    $DOCKER run --rm \
+    CC_OUTPUT=$($DOCKER run --rm \
         --pids-limit=500 \
         --init \
         -v /etc/localtime:/etc/localtime:ro \
@@ -241,5 +257,8 @@ else
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$CLAUDE_CMD"
+        $IMAGE bash -c "$CLAUDE_CMD"); CC_EXIT=$?
 fi
+
+read_report "$CC_OUTPUT"
+exit $CC_EXIT

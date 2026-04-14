@@ -216,7 +216,8 @@ private func runWorkflow(
                 role: "",
                 about: "",
                 task: "",
-                agent: nil
+                agent: nil,
+                knowledgePath: ""
             ),
             workflow: nil,
             forceRW: true
@@ -261,14 +262,23 @@ private struct LevelRunItemAndId {
 
 private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]]? {
     func fetchPerson(_ id: String) async throws -> Persona? {
-        let p = try await FileLoader.loadPersonById(id)
-        if let p {
-            return p
+        let fileName = "\(id).\(json)"
+
+        func tryLoad(in dir: FilePath) async throws -> Persona? {
+            let fp = dir
+                .appending("openloop").appending("personas")
+                .appending(fileName)
+            guard PathIO.isFileExistent(atPath: fp.string) else { return nil }
+            return try await FileLoader.loadPersonaAtPath(fp)
         }
 
-        // TODO: - load from remote & save under share/*
+        for dir in dirsToHome() {
+            if let p = try await tryLoad(in: dir) {
+                return p
+            }
+        }
 
-        return nil
+        return try await tryLoad(in: Paths.share)
     }
 
     var res: [[LevelRunItemAndId]] = []
@@ -295,7 +305,7 @@ private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]
                 let ref = parsePersonaRef(id)
                 let p = try await fetchPerson(ref.id)
                 guard let p else {
-                    throw ValidationError("Person does not exist: \(ref.id)")
+                    throw ValidationError("Persona does not exist: \(ref.id)")
                 }
 
                 levelRes.append(
@@ -342,53 +352,28 @@ private func parsePersonaRef(_ input: String) -> PersonaRef {
 //    }
 //}
 
+private func resolveKnowledgePath(for id: String) -> String? {
+    guard let dir = dirsToHome().first(where: {
+        PathIO.isDirectoryExistent(atPath: $0.appending("openloop").appending("knowledge").appending(id).string)
+    }) else { return nil }
+    return dir.appending("openloop").appending("knowledge").appending(id).string
+}
+
 private func preparePersonaFolder(
     for p: Persona, id: String
 ) async throws -> String? {
+
+    if let path = resolveKnowledgePath(for: id) {
+        return path
+    }
 
     let cur = Paths.curDir
         .appending("openloop").appending("knowledge")
         .appending(id).string
 
-    if PathIO.isDirectoryExistent(atPath: cur) {
-        return cur
-    }
-
     let share = Paths.share
         .appending("openloop").appending("knowledge")
         .appending(id).string
-
-    if PathIO.isDirectoryExistent(atPath: share) {
-        try PathIO.copy(share, cur)
-
-        return cur
-    }
-
-//    func copySrcToNewTemp(_ src: String) throws -> String? {
-//        let dest = FilePath(NSTemporaryDirectory()).appending(UUID().uuidString).string
-//
-//        try PathIO.copy(src, dest)
-//        return dest
-//    }
-//
-//    func withRoot(_ root: FilePath) throws -> String? {
-//        let path = root
-//            .appending("openloop").appending("knowledge")
-//            .appending(p.folderId).string
-//
-//        if PathIO.isDirectoryExistent(atPath: path) {
-//            return try copySrcToNewTemp(path)
-//        }
-//
-//        return nil
-//    }
-//
-//    if let res = try withRoot(Paths.curDir) {
-//        return res
-//    }
-//    if let res = try withRoot(Paths.share) {
-//        return res
-//    }
 
     // TODO: - fetch from remote
 
@@ -400,38 +385,29 @@ private func preparePersonaFolder(
 private func preparePersonas(
     _ levels: [[LevelRunItemAndId]]
 ) async throws -> [[PreparedRunItem]]? {
-    var folders: [[String]] = []
+    var knowledgePaths: [String: String] = [:]
 
     for runItems in levels {
-        var inner: [String] = []
-
         for ri in runItems {
-            if let p = ri.p {
+            guard let p = ri.p else { continue }
 
-                let usesProjectBinAgent: Bool = {
-                    if case .projectBin = resolveAgent(p.agent, workflowAgent: "") {
-                        return true
-                    }
-                    return false
-                }()
-
-                if usesProjectBinAgent {
-                    inner.append("")
-                } else {
-                    let fp = try await preparePersonaFolder(for: p, id: ri.id)
-                    guard let fp else {
-                        assertionFailure(); return nil
-                    }
-                    inner.append(fp)
+            let usesProjectBinAgent: Bool = {
+                if case .projectBin = resolveAgent(p.agent, workflowAgent: "") {
+                    return true
                 }
-            } else if let w = ri.w {
-                inner.append("")
+                return false
+            }()
+
+            if usesProjectBinAgent {
+                knowledgePaths[ri.id] = ""
             } else {
-                fatalError()
+                let fp = try await preparePersonaFolder(for: p, id: ri.id)
+                guard let fp else {
+                    assertionFailure(); return nil
+                }
+                knowledgePaths[ri.id] = fp
             }
         }
-
-        folders.append(inner)
     }
 
     return levels.enumerated().map { li, personasAndIds in
@@ -446,7 +422,8 @@ private func preparePersonas(
                         role: p.role,
                         about: p.about,
                         task: p.task,
-                        agent: p.agent == nil ? nil : ("openloop_" + p.agent!)
+                        agent: p.agent == nil ? nil : ("openloop_" + p.agent!),
+                        knowledgePath: knowledgePaths[personaAndId.id] ?? ""
                     ),
                     workflow: nil,
                     forceRW: effectiveRW
@@ -474,6 +451,28 @@ private enum AgentSource {
     case workflowFallback(name: String, path: FilePath)
 }
 
+private func dirsToHome() -> [FilePath] {
+    let home = FilePath(NSHomeDirectory())
+    var cur = Paths.curDir
+    var result: [FilePath] = []
+    while cur != home {
+        result.append(cur)
+
+        let parent = cur.removingLastComponent()
+        guard parent != cur else { break }
+
+        cur = parent
+    }
+    if cur == home { result.append(home) }
+    return result
+}
+
+private func findTopOpenloopInstanceDir() -> FilePath? {
+    dirsToHome().last(where: { dir in
+        PathIO.isDirectoryExistent(atPath: dir.appending("openloop").string)
+    })
+}
+
 private func resolveAgent(
     _ agentName: String?, workflowAgent: String
 ) -> AgentSource {
@@ -484,11 +483,13 @@ private func resolveAgent(
         )
     }
     let shortName = String(pa.trimmingPrefix("openloop_"))
-    let prjBin = Paths.curDir
-        .appending("openloop").appending("bin")
-        .appending(shortName)
-    if PathIO.isFileExistent(atPath: prjBin.string) {
-        return .projectBin(name: shortName, path: prjBin)
+    if let hit = dirsToHome().first(where: { dir in
+        PathIO.isFileExistent(atPath: dir.appending("openloop").appending("bin").appending(shortName).string)
+    }) {
+        return .projectBin(
+            name: shortName,
+            path: hit.appending("openloop").appending("bin").appending(shortName)
+        )
     }
     let userLocalBin = Paths.bin.appending(pa)
     if PathIO.isFileExistent(atPath: userLocalBin.string) {
@@ -516,6 +517,7 @@ private struct PreparedPersona: Hashable {
     let task: String
 //    let folder: String
     let agent: String?
+    let knowledgePath: String
 }
 
 private struct PreparedWorkflow: Hashable {
@@ -533,6 +535,10 @@ private func runGraph(
     levels.forEach {
         assert($0.notEmpty)
     }
+
+    let rootDir = findTopOpenloopInstanceDir() ?? Paths.curDir
+    assert(rootDir.string.utf8.count <= Paths.curDir.string.utf8.count)
+    assert(rootDir.string.utf8.count >= NSHomeDirectory().utf8.count)
 
     let tops: Set<PreparedRunItem>
     if levels.count > 1 {
@@ -659,8 +665,8 @@ private func runGraph(
     : "- `cd ..` to the project root folder to begin the task, applying knowledge from guides in this folder"
 )
 \(hasContext
-    ? "- When done, save your findings to `~/_report.md`. Credit teammates for their input"
-    : "- When done, save your findings to `~/_report.md`"
+    ? "- When done, save your findings to `/my/report.md`. Credit teammates for their input"
+    : "- When done, save your findings to `/my/report.md`"
 )
 """
 
@@ -676,9 +682,13 @@ private func runGraph(
 
             let systemPrompt = from.persona?.about ?? ""
 
-            let resolved = resolveAgent(from.persona?.agent, workflowAgent: workflowAgent)
+            let resolved = resolveAgent(
+                from.persona?.agent, workflowAgent: workflowAgent
+            )
+
             let agent: String
             let agentPath: FilePath
+
             switch resolved {
             case .projectBin(let name, let path):
                 agent = name; agentPath = path
@@ -688,15 +698,20 @@ private func runGraph(
                 agent = name; agentPath = path
             }
 
+            let knowledgePath: String
+            if from.realId == "_bottom_" || from.realId == "_head_" {
+                knowledgePath = from.realId
+            } else {
+                knowledgePath = from.persona!.knowledgePath
+            }
+
             res = try await subprocess(
                 agentPath,
                 args: (mode == nil) ? [
-                    from.realId, prompt, systemPrompt
+                    rootDir.string, knowledgePath, prompt, systemPrompt
                 ] : [
-                    from.realId,
-                    prompt,
-                    systemPrompt,
-                    mode!,
+                    rootDir.string, knowledgePath,
+                    prompt, systemPrompt, mode!,
                 ],
                 chroot: Paths.curDir, // .init(from.folder),
                 stdin: context

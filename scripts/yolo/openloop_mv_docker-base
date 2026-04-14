@@ -16,6 +16,9 @@ IMAGE="$1"
 
 shift
 
+PARENT="$1"
+shift
+
 # Handle optional parameters
 PERSONA=""
 if [ $# -ge 1 ]; then
@@ -47,12 +50,14 @@ if [ -z "$PROMPT" ]; then
 fi
 
 ROOT="$PWD"
+PARENT="${PARENT:-$ROOT}"
+if [[ "$PARENT" != "$HOME"/* ]]; then
+    echo "ERR. PARENT must be inside \$HOME. Got: $PARENT" >&2; exit 1
+fi
 if [ ! -d "$ROOT/openloop" ]; then
     echo "Error: openloop directory not found in $ROOT" >&2
     exit 1
 fi
-if [ -f "$ROOT/_report.md" ]; then rm -f "$ROOT/_report.md"; fi
-
 # Capture piped stdin at top level (before any subshells)
 YOLO_STDIN=""
 if [ -p /dev/stdin ]; then
@@ -91,9 +96,9 @@ fi
 [ -f "$HOME/.gitconfig" ] && VOLUME_MOUNTS+=(-v "$HOME/.gitconfig:/home/node/.gitconfig:ro")
 
 if [ "${MODE}" == "plan" ]; then
-    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT:ro")
+    VOLUME_MOUNTS+=(-v "$PARENT:$PARENT:ro")
 else
-    VOLUME_MOUNTS+=(-v "$ROOT:$ROOT")
+    VOLUME_MOUNTS+=(-v "$PARENT:$PARENT")
     MODE="auto-approve"
 fi
 
@@ -104,7 +109,10 @@ if [ "$PERSONA" == "_head_" ] || [ "$PERSONA" == "_bottom_" ]; then
 else
     PRJ="$ROOT/openloop"
 
-    VOLUME_MOUNTS+=(-v "$ROOT/openloop/knowledge/$PERSONA:$ROOT/openloop:ro")
+    if [[ "$PERSONA" != "$HOME"/* ]]; then
+        echo "ERR. PERSONA must be inside \$HOME. Got: $PERSONA" >&2; exit 1
+    fi
+    VOLUME_MOUNTS+=(-v "$PERSONA:$ROOT/openloop:ro")
 fi
 
 if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
@@ -114,21 +122,34 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     YOLO_STDIN=""
 fi
 
+REPORT_DIR=$(mktemp -d)
+VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
+
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
-    OCRUN=("bash" "-c" "REPORT=\$(vibe --prompt \"\$PROMPT\" --agent $MODE --output text) && { [ -f ~/_report.md ] && cat ~/_report.md || { [ -f ~/tmp/_report.md ] && cat ~/tmp/_report.md || { [ -f /tmp/_report.md ] && cat /tmp/_report.md || { [ -f $ROOT/_report.md ] && { cat $ROOT/_report.md; rm -f $ROOT/_report.md; } || echo \"\$REPORT\"; }; }; }; }")
+    OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # else
 #     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
 
-$DOCKER run --rm \
+read_report() {
+    local stdout="$1"
+    [ -s "$REPORT_DIR/report.md" ] && { cat "$REPORT_DIR/report.md"; rm -rf "$REPORT_DIR"; return; }
+    rm -rf "$REPORT_DIR"
+    echo "$stdout"
+}
+
+cleanup() {
+    [ -n "$SYSTEM_PROMPT_TMP_DIR" ] && rm -rf "$SYSTEM_PROMPT_TMP_DIR"
+    rm -rf "$REPORT_DIR"
+}
+trap cleanup EXIT
+
+OC_OUTPUT=$($DOCKER run --rm \
     --init --pids-limit=500 \
     -v /etc/localtime:/etc/localtime:ro \
     -e "PROMPT=${PROMPT}" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
-    $IMAGE "${OCRUN[@]}"
-
-# Cleanup temp system prompt directory
-if [ -n "$SYSTEM_PROMPT_TMP_DIR" ]; then
-    rm -rf "$SYSTEM_PROMPT_TMP_DIR"
-fi
+    $IMAGE "${OCRUN[@]}"); OC_EXIT=$?
+read_report "$OC_OUTPUT"
+exit $OC_EXIT

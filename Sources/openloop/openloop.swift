@@ -21,18 +21,21 @@ struct openloop: ParsableCommand {
 
                 if try await detectDuplicateInstance() { return }
 
-                let success = try? await exec(
-                    "/usr/bin/open",
-                    args: ["http://localhost:54321"]
-                )
-                if success == nil {
-                    _ = try? await exec(
-                        "/usr/bin/xdg-open",
+                func openControlFlightWeb() async {
+                    let success = try? await exec(
+                        "/usr/bin/open",
                         args: ["http://localhost:54321"]
                     )
+                    if success == nil {
+                        _ = try? await exec(
+                            "/usr/bin/xdg-open",
+                            args: ["http://localhost:54321"]
+                        )
 
-                    log.info("Open control-plane in the browser: http://localhost:54321")
+                        log.info("Open control-plane in the browser: http://localhost:54321")
+                    }
                 }
+//                await openControlFlightWeb() // Disabled ffs
 
                 while true {
                     try await loop()
