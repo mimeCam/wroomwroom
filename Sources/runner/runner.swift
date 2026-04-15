@@ -537,7 +537,7 @@ private func runGraph(
 
     let rootDir = findTopOpenloopInstanceDir() ?? Paths.curDir
     assert(rootDir.string.utf8.count <= Paths.curDir.string.utf8.count)
-    assert(rootDir.string.utf8.count >= NSHomeDirectory().utf8.count)
+    assert(rootDir.string.utf8.count > NSHomeDirectory().utf8.count)
 
     let tops: Set<PreparedRunItem>
     if levels.count > 1 {
