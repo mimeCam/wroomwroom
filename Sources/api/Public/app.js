@@ -1014,8 +1014,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             return `
             <div class="log-entry">
-                <div class="log-date">${formatTimestamp(log.started_at)}${renderExpandLink(log, instancePath)}</div>
+                <div class="log-date">${formatTimestamp(log.started_at)}</div>
                 ${inputBubbles.join('')}
+                ${renderExpandLink(log, instancePath)}
                 <div class="log-bubble output ${log.success ? '' : 'error'}">
                     <span class="log-bubble-subtitle">output</span>
                     ${renderLogContent(log.msg.output || '(empty)')}
@@ -1706,24 +1707,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function closeInlinePersonaEditor() {
+        const ctx = currentInlineEditor?.closest('.expanded-content');
         if (currentInlineEditor) {
             currentInlineEditor.remove();
             currentInlineEditor = null;
         }
-        const logsPanel = document.querySelector('.logs-panel');
+        const root = ctx || document;
+        const logsPanel = root.querySelector('.logs-panel');
         if (logsPanel) {
             logsPanel.remove();
         }
-        document.querySelectorAll('.workflow-logs-panel').forEach(panel => {
+        root.querySelectorAll('.workflow-logs-panel').forEach(panel => {
             panel.remove();
         });
-        const workflowsColumn = document.querySelector('.workflows-column');
-        const personasColumn = document.querySelector('.personas-column');
+        const workflowsColumn = root.querySelector('.workflows-column');
         if (workflowsColumn) {
             workflowsColumn.style.display = '';
-        }
-        if (personasColumn) {
-            personasColumn.classList.remove('logs-active');
         }
         clearEditingState();
     }
@@ -1866,12 +1865,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const expandedContent = personaNode.closest('.expanded-content');
             if (expandedContent) {
                 const workflowsColumn = expandedContent.querySelector('.workflows-column');
-                const personasColumn = expandedContent.querySelector('.personas-column');
                 if (workflowsColumn) {
                     workflowsColumn.style.display = 'none';
-                }
-                if (personasColumn) {
-                    personasColumn.classList.add('logs-active');
                 }
 
                 const logsPanelHtml = `
