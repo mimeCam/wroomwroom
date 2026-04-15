@@ -56,6 +56,17 @@ struct InstanceHandler: Sendable {
             }
         }
 
+        // Synthetic instance for user-global shared personas/workflows
+        let globalSharePath = Paths.globalShare.string
+        instances.append(InstanceInfo(
+            path: globalSharePath,
+            parentPath: nil,
+            state: nil,
+            manualActive: 0,
+            manualCompleted: 0,
+            isGlobalShare: true
+        ))
+
         let parentPaths = InstanceHandler.computeParentPaths(
             instances.map { $0.path }
         )
@@ -112,6 +123,7 @@ extension InstanceHandler {
         var state: InstanceStateInfo?
         var manualActive: Int
         var manualCompleted: Int
+        var isGlobalShare: Bool = false
     }
 
     struct InstanceListResponse: Content, Sendable {

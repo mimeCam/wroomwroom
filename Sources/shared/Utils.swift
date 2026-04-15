@@ -51,6 +51,8 @@ public struct Paths {
     public static let share = local
         .appending("share")
 
+    public static let globalShare = share
+
     public static func dirsToHome() -> [FilePath] {
         let home = FilePath(NSHomeDirectory())
         var cur = curDir

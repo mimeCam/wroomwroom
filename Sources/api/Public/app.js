@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentHelpDoc = null;
     let instanceParentMap = {};
     let parentInstanceData = {};
+    let globalSharePaths = new Set();
 
     function toSlug(value) {
         return value
@@ -99,6 +100,9 @@ document.addEventListener('DOMContentLoaded', function() {
             chain.push(parent);
             current = parent;
         }
+        globalSharePaths.forEach(gp => {
+            if (!chain.includes(gp)) chain.push(gp);
+        });
         return chain;
     }
 
@@ -106,16 +110,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!parentPaths || parentPaths.length === 0) return '';
         let sections = '';
         parentPaths.forEach(pp => {
+            const isGlobal = globalSharePaths.has(pp);
             const parts = pp.split('/').filter(c => c.length > 0);
             const name = parts[parts.length - 1] || pp;
-            const hue = getInstanceHue(pp, pp);
+            const dotStyle = isGlobal
+                ? 'background:hsl(38, 55%, 58%)'
+                : `background:hsl(${getInstanceHue(pp, pp)}, 45%, 58%)`;
+            const label = isGlobal
+                ? 'Global (system-wide)'
+                : `Parent: ${escapeHtml(name)}`;
             sections += `
-            <div class="parent-section" data-parent-path="${escapeHtml(pp)}" data-current-instance-path="${escapeHtml(currentInstancePath || '')}">
+            <div class="parent-section" data-parent-path="${escapeHtml(pp)}" data-current-instance-path="${escapeHtml(currentInstancePath || '')}"${isGlobal ? ' data-global-share="true"' : ''}>
                 <div class="parent-section-header" role="button" aria-expanded="false" tabindex="0" data-mode="${mode}">
-                    <span class="parent-section-dot" style="background:hsl(${hue}, 45%, 58%)"></span>
+                    <span class="parent-section-dot" style="${dotStyle}"></span>
                     <svg class="parent-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-                    <span class="parent-section-label">Parent: ${escapeHtml(name)}</span>
-                    <span class="parent-section-count">—</span>
+                    <span class="parent-section-label">${label}</span>
+                    <span class="parent-section-count">\u2014</span>
                 </div>
                 <div class="parent-section-body"></div>
             </div>`;
@@ -145,6 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const parentPath = section.dataset.parentPath;
         const mode = header.dataset.mode;
         const isExpanded = header.getAttribute('aria-expanded') === 'true';
+        const isGlobal = section.dataset.globalShare === 'true';
 
         if (isExpanded) {
             header.setAttribute('aria-expanded', 'false');
@@ -162,15 +173,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     const personas = await fetchParentPersonas(parentPath);
                     const countBadge = header.querySelector('.parent-section-count');
                     if (countBadge) countBadge.textContent = personas.length + ' persona' + (personas.length !== 1 ? 's' : '');
+                    const emptyMsg = isGlobal
+                        ? 'No system-wide personas. Add personas to ~/.local/share/openloop/personas/ to share across all projects.'
+                        : 'No personas in this instance.';
                     body.innerHTML = personas.length === 0
-                        ? '<div class="parent-section-empty">No personas in this instance.</div>'
+                        ? `<div class="parent-section-empty">${emptyMsg}</div>`
                         : '<div class="persona-list">' + renderPersonasHtml(personas, parentPath) + '</div>';
                 } else if (mode === 'workflows') {
                     const workflows = await fetchParentWorkflows(parentPath);
                     const countBadge = header.querySelector('.parent-section-count');
                     if (countBadge) countBadge.textContent = workflows.length + ' workflow' + (workflows.length !== 1 ? 's' : '');
+                    const emptyMsg = isGlobal
+                        ? 'No system-wide workflows. Add workflows to ~/.local/share/openloop/workflows/ to share across all projects.'
+                        : 'No workflows in this instance.';
                     body.innerHTML = workflows.length === 0
-                        ? '<div class="parent-section-empty">No workflows in this instance.</div>'
+                        ? `<div class="parent-section-empty">${emptyMsg}</div>`
                         : '<div class="workflow-list">' + renderWorkflowsHtml(workflows, parentPath) + '</div>';
                 }
             } catch (err) {
@@ -195,6 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const parentPath = section.dataset.parentPath;
         const mode = header.dataset.mode;
         const isExpanded = header.getAttribute('aria-expanded') === 'true';
+        const isGlobal = section.dataset.globalShare === 'true';
 
         if (isExpanded) {
             header.setAttribute('aria-expanded', 'false');
@@ -212,16 +230,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     const pp = await fetchParentPersonas(parentPath);
                     const countBadge = header.querySelector('.parent-section-count');
                     if (countBadge) countBadge.textContent = pp.length + ' item' + (pp.length !== 1 ? 's' : '');
+                    const emptyMsg = isGlobal ? 'No system-wide personas.' : 'No personas in this instance.';
                     body.innerHTML = pp.length === 0
-                        ? '<div class="parent-section-empty">No personas in this instance.</div>'
+                        ? `<div class="parent-section-empty">${emptyMsg}</div>`
                         : pp.map(p => `<div class="persona-selector-item" data-persona-id="${escapeHtml(p.id)}">${getAvatarHtml(p.avatar)}<div class="persona-selector-info"><div class="persona-selector-name-row"><span class="persona-selector-name">${escapeHtml(p.name)}</span>${p.role ? `<span class="persona-selector-role">${escapeHtml(p.role)}</span>` : ''}</div>${p.about ? `<span class="persona-selector-about">${escapeHtml(p.about)}</span>` : ''}</div></div>`).join('');
                 } else if (mode === 'workflows') {
                     const ww = await fetchParentWorkflows(parentPath);
                     const filtered = ww.filter(w => w.id !== workflowId);
                     const countBadge = header.querySelector('.parent-section-count');
                     if (countBadge) countBadge.textContent = filtered.length + ' item' + (filtered.length !== 1 ? 's' : '');
+                    const emptyMsg = isGlobal ? 'No system-wide workflows.' : 'No workflows in this instance.';
                     body.innerHTML = filtered.length === 0
-                        ? '<div class="parent-section-empty">No workflows in this instance.</div>'
+                        ? `<div class="parent-section-empty">${emptyMsg}</div>`
                         : filtered.map(w => `<div class="persona-selector-item workflow-selector-item" data-workflow-id="${escapeHtml(w.id)}"><span class="workflow-selector-icon">\u25CB</span><div class="persona-selector-info"><div class="persona-selector-name-row"><span class="persona-selector-name">${escapeHtml(w.name)}</span></div>${w.desc ? `<span class="persona-selector-about">${escapeHtml(w.desc)}</span>` : ''}</div></div>`).join('');
                 }
             } catch (err) {
@@ -275,8 +295,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function buildTreeFromPaths(instancesData) {
         // Build a map of path -> parentPath from API data
         const parentMap = {};
+        globalSharePaths = new Set();
         instancesData.forEach(d => {
             parentMap[d.path] = d.parentPath || null;
+            if (d.isGlobalShare) globalSharePaths.add(d.path);
         });
         instanceParentMap = parentMap;
 
@@ -296,7 +318,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return { depth, rootPath: current };
         }
 
-        const instances = instancesData.map(instanceData => {
+        const instances = instancesData.filter(d => !d.isGlobalShare).map(instanceData => {
             const path = instanceData.path;
             const parts = path.split('/').filter(c => c.length > 0);
             const name = parts[parts.length - 1] || path;
@@ -1213,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <button class="add-item-btn" data-action="create-workflow" data-instance-path="${escapeHtml(path)}">+ Add Workflow</button>
                     <div class="workflow-list">${workflowsHtml}</div>
+                    ${renderParentSectionsHtml(getParentChain(path), 'workflows', path)}
                     <div class="manual-workflows-section">
                         <div class="subview-header">Manual Workflows <button class="text-btn manual-workflows-refresh" data-instance-path="${escapeHtml(path)}">Refresh</button></div>
                         <div class="manual-workflows-list" data-instance-path="${escapeHtml(path)}">
