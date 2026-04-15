@@ -463,7 +463,6 @@ private func dirsToHome() -> [FilePath] {
 
         cur = parent
     }
-    if cur == home { result.append(home) }
     return result
 }
 
