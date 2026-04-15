@@ -150,8 +150,8 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     YOLO_STDIN=""
 fi
 
-REPORT_DIR=$(mktemp -d)
-VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
+mkdir -p "$ROOT/_my"
+VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
 
 if [ -n "$MODE" ]; then
     OC_CMD="opencode run \"\$PROMPT\" --agent \"$MODE\""
@@ -159,7 +159,8 @@ else
     OC_CMD="opencode run \"\$PROMPT\""
 fi
 
-OCRUN=("bash" "-c" "opencode models --refresh >/dev/null 2>&1; $OC_CMD")
+INNER_CMD="opencode models --refresh >/dev/null 2>&1; $OC_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
+OCRUN=("bash" "-c" "$INNER_CMD")
 
 
 #
@@ -185,14 +186,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 EOF
 fi
 
-read_report() {
-    local stdout="$1"
-    [ -s "$REPORT_DIR/report.md" ] && { cat "$REPORT_DIR/report.md"; rm -rf "$REPORT_DIR"; return; }
-    rm -rf "$REPORT_DIR"
-    echo "$stdout"
-}
-
-OC_OUTPUT=$($DOCKER run --rm \
+$DOCKER run --rm \
     --pids-limit=500 \
     --init \
     -v /etc/localtime:/etc/localtime:ro \
@@ -201,7 +195,4 @@ OC_OUTPUT=$($DOCKER run --rm \
     -e "PROMPT=$PROMPT" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
-    $IMAGE "${OCRUN[@]}"); OC_EXIT=$?
-read_report "$OC_OUTPUT"
-exit $OC_EXIT
-    # $IMAGE tail -F /dev/null
+    $IMAGE "${OCRUN[@]}"

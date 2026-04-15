@@ -43,11 +43,15 @@ public extension FileLoader {
         }
     }
 
-    static func saveRunLog(_ log: RunLog) async throws {
+    static func saveRunLog(
+        _ log: RunLog, at instancePath: String
+    ) async throws {
         let maxRetries = 3
         for attempt in 1...maxRetries {
             do {
-                try LogManager.saveLog(log)
+                try LogManager.saveLog(
+                    log, at: instancePath
+                )
                 return
             } catch {
                 if attempt == maxRetries { throw error }
@@ -84,8 +88,10 @@ public extension FileLoader {
             return try await loadWorkflowAtPath(fp)
         }
 
-        if let w = try await tryLoad(in: Paths.curDir) {
-            return w
+        for dir in Paths.dirsToHome() {
+            if let w = try await tryLoad(in: dir) {
+                return w
+            }
         }
         if let w = try await tryLoad(in: Paths.share) {
             return w
@@ -106,8 +112,10 @@ public extension FileLoader {
             return try await loadPersonaAtPath(fp)
         }
 
-        if let p = try await tryLoad(in: Paths.curDir) {
-            return p
+        for dir in Paths.dirsToHome() {
+            if let p = try await tryLoad(in: dir) {
+                return p
+            }
         }
         if let p = try await tryLoad(in: Paths.share) {
             return p

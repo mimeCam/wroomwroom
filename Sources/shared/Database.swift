@@ -39,21 +39,19 @@ public struct LogManager {
             workflow_id TEXT NOT NULL,
             persona_id TEXT,
             agent TEXT NOT NULL,
-            instance_path TEXT NOT NULL,
             created_at REAL NOT NULL,
             message_id INTEGER NOT NULL
         );
         """)
 
-        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_instance_path ON logs(instance_path);")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_started_at ON logs(started_at);")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_workflow_id ON logs(workflow_id);")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_persona_id ON logs(persona_id);")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_agent ON logs(agent);")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_message_id ON logs(message_id);")
 
-        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_instance_path_persona_workflow_started ON logs(instance_path, persona_id, workflow_id, started_at DESC);")
-        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_instance_path_null_persona_started ON logs(instance_path, started_at DESC) WHERE persona_id IS NULL;")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_persona_workflow_started ON logs(persona_id, workflow_id, started_at DESC);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_null_persona_started ON logs(started_at DESC) WHERE persona_id IS NULL;")
 
         try db.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -76,23 +74,68 @@ public struct LogManager {
         """)
 
         try db.run("CREATE INDEX IF NOT EXISTS idx_parents_message_id ON parents(message_id);")
-        try migrateAddSessionAndLevel(on: db)
+        try migrateLegacy(on: db)
     }
 
-    private static func migrateAddSessionAndLevel(on db: Connection) throws {
+    private static func migrateLegacy(on db: Connection) throws {
         try? db.run("ALTER TABLE logs ADD COLUMN session TEXT;")
         try? db.run("ALTER TABLE logs ADD COLUMN level INTEGER;")
         try db.run("CREATE INDEX IF NOT EXISTS idx_logs_session ON logs(session);")
+        try migrateRemoveInstancePath(on: db)
     }
 
-    public static func saveLog(_ runLog: RunLog) throws {
+    private static func migrateRemoveInstancePath(on db: Connection) throws {
+        let hasColumn = (try? db.prepare("PRAGMA table_info(logs);").contains { $0[1] as? String == "instance_path" }) ?? false
+        guard hasColumn else {
+            return
+        }
+
+        try db.transaction {
+            try db.execute("""
+            CREATE TABLE logs_new (
+                id TEXT PRIMARY KEY,
+                success INTEGER NOT NULL,
+                took INTEGER NOT NULL,
+                started_at REAL NOT NULL,
+                ended_at REAL NOT NULL,
+                workflow_id TEXT NOT NULL,
+                persona_id TEXT,
+                agent TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                message_id INTEGER NOT NULL,
+                session TEXT,
+                level INTEGER
+            );
+            """)
+            try db.run("""
+            INSERT INTO logs_new
+                SELECT id, success, took, started_at, ended_at, workflow_id,
+                       persona_id, agent, created_at, message_id, session, level
+                FROM logs;
+            """)
+            try db.run("DROP TABLE logs;")
+            try db.run("ALTER TABLE logs_new RENAME TO logs;")
+        }
+
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_started_at ON logs(started_at);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_workflow_id ON logs(workflow_id);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_persona_id ON logs(persona_id);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_agent ON logs(agent);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_message_id ON logs(message_id);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_session ON logs(session);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_persona_workflow_started ON logs(persona_id, workflow_id, started_at DESC);")
+        try db.run("CREATE INDEX IF NOT EXISTS idx_logs_null_persona_started ON logs(started_at DESC) WHERE persona_id IS NULL;")
+    }
+
+    public static func saveLog(
+        _ runLog: RunLog, at instancePath: String
+    ) throws {
         log.info("Starting saveLog")
-        log.info("instancePath: \(runLog.instancePath)")
         log.info("workflowId: \(runLog.workflowId)")
         log.info("agent: \(runLog.agent)")
         log.info("success: \(runLog.success)")
 
-        let dbPath = FilePath(runLog.instancePath)
+        let dbPath = FilePath(instancePath)
             .appending("openloop")
             .appending("logs.db")
             .string
@@ -149,36 +192,28 @@ public struct LogManager {
         let db = try getConnection(dbPath)
         log.info("Got connection")
 
-        var baseQuery = "SELECT COUNT(*) as count FROM logs l WHERE l.instance_path = ?"
-        var bindCount = 1
+        var baseQuery = "SELECT COUNT(*) as count FROM logs l"
+        var binds: [Binding] = []
 
-        if personaId != nil {
-            baseQuery += " AND l.persona_id = ?"
-            bindCount += 1
+        if let personaId {
+            baseQuery += " WHERE l.persona_id = ?"
+            binds.append(personaId)
         } else {
-            baseQuery += " AND l.persona_id IS NULL"
+            baseQuery += " WHERE l.persona_id IS NULL"
         }
 
-        if workflowId != nil {
+        if let workflowId {
             baseQuery += " AND l.workflow_id = ?"
-            bindCount += 1
+            binds.append(workflowId)
         }
 
         let finalQuery = baseQuery + ";"
-        log.info("finalQuery: \(finalQuery)")
-        log.info("bindCount: \(bindCount)")
-
-        log.info("Executing count query...")
 
         let count: Int64
-        if let personaId, let workflowId {
-            count = try db.scalar(finalQuery, instancePath, personaId, workflowId) as? Int64 ?? 0
-        } else if let personaId {
-            count = try db.scalar(finalQuery, instancePath, personaId) as? Int64 ?? 0
-        } else if let workflowId {
-            count = try db.scalar(finalQuery, instancePath, workflowId) as? Int64 ?? 0
+        if binds.count == 2 {
+            count = try db.scalar(finalQuery, binds[0], binds[1]) as? Int64 ?? 0
         } else {
-            count = try db.scalar(finalQuery, instancePath) as? Int64 ?? 0
+            count = try db.scalar(finalQuery, binds[0]) as? Int64 ?? 0
         }
 
         let resultCount = Int(count)
@@ -207,20 +242,19 @@ public struct LogManager {
         let db = try getConnection(dbPath)
         log.info("Got connection")
 
-        var baseQuery = "SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, l.instance_path, m.input, m.output, m.id, l.session, l.level FROM logs l JOIN messages m ON l.message_id = m.id WHERE l.instance_path = ?"
+        var baseQuery = "SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, m.input, m.output, m.id, l.session, l.level FROM logs l JOIN messages m ON l.message_id = m.id"
 
-        if personaId != nil {
-            baseQuery += " AND l.persona_id = ?"
+        if let personaId {
+            baseQuery += " WHERE l.persona_id = ?"
         } else {
-            baseQuery += " AND l.persona_id IS NULL"
+            baseQuery += " WHERE l.persona_id IS NULL"
         }
 
-        if workflowId != nil {
+        if let workflowId {
             baseQuery += " AND l.workflow_id = ?"
         }
 
         let finalQuery = baseQuery + " ORDER BY l.started_at DESC LIMIT ? OFFSET ?;"
-        log.info("finalQuery: \(finalQuery)")
 
         struct LogRowData {
             let success: Bool
@@ -230,7 +264,6 @@ public struct LogManager {
             let workflowId: String
             let personaId: String?
             let agent: String
-            let instancePath: String
             let input: String
             let output: String
             let messageId: Int64
@@ -244,13 +277,13 @@ public struct LogManager {
         var stmt: Statement
 
         if let personaId, let workflowId {
-            stmt = try db.prepare(finalQuery, instancePath, personaId, workflowId, limit, offset)
+            stmt = try db.prepare(finalQuery, personaId, workflowId, limit, offset)
         } else if let personaId {
-            stmt = try db.prepare(finalQuery, instancePath, personaId, limit, offset)
+            stmt = try db.prepare(finalQuery, personaId, limit, offset)
         } else if let workflowId {
-            stmt = try db.prepare(finalQuery, instancePath, workflowId, limit, offset)
+            stmt = try db.prepare(finalQuery, workflowId, limit, offset)
         } else {
-            stmt = try db.prepare(finalQuery, instancePath, limit, offset)
+            stmt = try db.prepare(finalQuery, limit, offset)
         }
 
         for (index, row) in stmt.enumerated() {
@@ -261,12 +294,11 @@ public struct LogManager {
             let workflowId = row[4] as? String ?? ""
             let personaId = row[5] as? String
             let agent = row[6] as? String ?? ""
-            let instancePath = row[7] as? String ?? ""
-            let input = row[8] as? String ?? ""
-            let output = row[9] as? String ?? ""
-            let messageId = row[10] as? Int64 ?? 0
-            let session = row[11] as? String
-            let level = (row[12] as? Int64).map { Int($0) }
+            let input = row[7] as? String ?? ""
+            let output = row[8] as? String ?? ""
+            let messageId = row[9] as? Int64 ?? 0
+            let session = row[10] as? String
+            let level = (row[11] as? Int64).map { Int($0) }
 
             log.info("Row #\(index + 1) data - success: \(success), took: \(took), workflowId: \(workflowId), agent: \(agent), messageId: \(messageId), personaId: \(personaId ?? "NULL")")
 
@@ -278,7 +310,6 @@ public struct LogManager {
                 workflowId: workflowId,
                 personaId: personaId,
                 agent: agent,
-                instancePath: instancePath,
                 input: input,
                 output: output,
                 messageId: messageId,
@@ -318,7 +349,6 @@ public struct LogManager {
                 took: logRow.took,
                 startedAt: logRow.startedAt,
                 endedAt: logRow.endedAt,
-                instancePath: logRow.instancePath,
                 workflowId: logRow.workflowId,
                 personaId: logRow.personaId,
                 agent: logRow.agent,
@@ -345,9 +375,9 @@ public struct LogManager {
         let db = try getConnection(dbPath)
 
         let query = """
-        SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, l.instance_path, m.input, m.output, m.id, l.session, l.level
+        SELECT l.success, l.took, l.started_at, l.ended_at, l.workflow_id, l.persona_id, l.agent, m.input, m.output, m.id, l.session, l.level
         FROM logs l JOIN messages m ON l.message_id = m.id
-        WHERE l.instance_path = ? AND l.session = ?
+        WHERE l.session = ?
         ORDER BY l.started_at ASC;
         """
 
@@ -355,13 +385,13 @@ public struct LogManager {
             let success: Bool; let took: Int
             let startedAt: Double; let endedAt: Double
             let workflowId: String; let personaId: String?
-            let agent: String; let instancePath: String
+            let agent: String
             let input: String; let output: String
             let messageId: Int64; let session: String?; let level: Int?
         }
 
         var logRows: [LogRowData] = []
-        let stmt = try db.prepare(query, instancePath, session)
+        let stmt = try db.prepare(query, session)
         for row in stmt {
             logRows.append(LogRowData(
                 success: (row[0] as? Int64 ?? 0) != 0,
@@ -371,12 +401,11 @@ public struct LogManager {
                 workflowId: row[4] as? String ?? "",
                 personaId: row[5] as? String,
                 agent: row[6] as? String ?? "",
-                instancePath: row[7] as? String ?? "",
-                input: row[8] as? String ?? "",
-                output: row[9] as? String ?? "",
-                messageId: row[10] as? Int64 ?? 0,
-                session: row[11] as? String,
-                level: (row[12] as? Int64).map { Int($0) }
+                input: row[7] as? String ?? "",
+                output: row[8] as? String ?? "",
+                messageId: row[9] as? Int64 ?? 0,
+                session: row[10] as? String,
+                level: (row[11] as? Int64).map { Int($0) }
             ))
         }
 
@@ -399,7 +428,6 @@ public struct LogManager {
                 took: logRow.took,
                 startedAt: logRow.startedAt,
                 endedAt: logRow.endedAt,
-                instancePath: logRow.instancePath,
                 workflowId: logRow.workflowId,
                 personaId: logRow.personaId,
                 agent: logRow.agent,
@@ -417,8 +445,8 @@ public struct LogManager {
     ) throws {
         try db.run(
             """
-            INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, instance_path, created_at, message_id, session, level)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO logs (id, success, took, started_at, ended_at, workflow_id, persona_id, agent, created_at, message_id, session, level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             logId,
             runLog.success ? 1 : 0,
@@ -428,7 +456,6 @@ public struct LogManager {
             runLog.workflowId,
             runLog.personaId,
             runLog.agent,
-            runLog.instancePath,
             Date().timeIntervalSince1970,
             messageId,
             runLog.session,

@@ -185,8 +185,8 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     YOLO_STDIN=""
 fi
 
-REPORT_DIR=$(mktemp -d)
-VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
+mkdir -p "$ROOT/_my"
+VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
 
 # Build claude command following yolo_claude.sh pattern
 SKIP_PERMISSIONS_FLAG=""
@@ -216,18 +216,10 @@ if [ -n "$SYSTEM_PROMPT" ]; then
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
 fi
 
-read_report() {
-    local stdout="$1"
-    [ -s "$REPORT_DIR/report.md" ] && { cat "$REPORT_DIR/report.md"; rm -rf "$REPORT_DIR"; return; }
-    rm -rf "$REPORT_DIR"
-    echo "$stdout"
-}
-
-CC_OUTPUT=""
-CC_EXIT=0
+INNER_CMD="$CLAUDE_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
 
 if [ "$use_tier" = true ]; then
-    CC_OUTPUT=$($DOCKER run --rm \
+    $DOCKER run --rm \
         --pids-limit=500 \
         --init \
         -e ANTHROPIC_LOG=error \
@@ -241,9 +233,9 @@ if [ "$use_tier" = true ]; then
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$CLAUDE_CMD"); CC_EXIT=$?
+        $IMAGE bash -c "$INNER_CMD"
 else
-    CC_OUTPUT=$($DOCKER run --rm \
+    $DOCKER run --rm \
         --pids-limit=500 \
         --init \
         -v /etc/localtime:/etc/localtime:ro \
@@ -257,8 +249,5 @@ else
         -e "SYSTEM_PROMPT=${SYSTEM_PROMPT}" \
         "${VOLUME_MOUNTS[@]}" \
         -w "$PRJ" \
-        $IMAGE bash -c "$CLAUDE_CMD"); CC_EXIT=$?
+        $IMAGE bash -c "$INNER_CMD"
 fi
-
-read_report "$CC_OUTPUT"
-exit $CC_EXIT

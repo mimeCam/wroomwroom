@@ -104,7 +104,6 @@ private func start(
             took: Int(elapsed),
             startedAt: tb.startTime, endedAt: tb.now,
 
-            instancePath: Paths.curDir.string,
             workflowId: workflow,
             personaId: nil,
 
@@ -113,7 +112,10 @@ private func start(
             session: session,
             level: nil
         )
-        try await FileLoader.saveRunLog(log)
+        try await FileLoader.saveRunLog(
+            log,
+            at: Paths.curDir.string
+        )
     }
 
     let res: String
@@ -272,7 +274,7 @@ private func fetchLevels(_ ids: [[String]]) async throws -> [[LevelRunItemAndId]
             return try await FileLoader.loadPersonaAtPath(fp)
         }
 
-        for dir in dirsToHome() {
+        for dir in Paths.dirsToHome() {
             if let p = try await tryLoad(in: dir) {
                 return p
             }
@@ -353,10 +355,18 @@ private func parsePersonaRef(_ input: String) -> PersonaRef {
 //}
 
 private func resolveKnowledgePath(for id: String) -> String? {
-    guard let dir = dirsToHome().first(where: {
-        PathIO.isDirectoryExistent(atPath: $0.appending("openloop").appending("knowledge").appending(id).string)
-    }) else { return nil }
-    return dir.appending("openloop").appending("knowledge").appending(id).string
+    let rel = FilePath("openloop").appending("knowledge").appending(id).components
+    
+    if let dir = Paths.dirsToHome().first(where: {
+        PathIO.isDirectoryExistent(atPath: $0.appending(rel).string)
+    }) {
+        return dir.appending(rel).string
+    }
+    let share = Paths.share.appending(rel)
+    if PathIO.isDirectoryExistent(atPath: share.string) {
+        return share.string
+    }
+    return nil
 }
 
 private func preparePersonaFolder(
@@ -451,23 +461,8 @@ private enum AgentSource {
     case workflowFallback(name: String, path: FilePath)
 }
 
-private func dirsToHome() -> [FilePath] {
-    let home = FilePath(NSHomeDirectory())
-    var cur = Paths.curDir
-    var result: [FilePath] = []
-    while cur != home {
-        result.append(cur)
-
-        let parent = cur.removingLastComponent()
-        guard parent != cur else { break }
-
-        cur = parent
-    }
-    return result
-}
-
 private func findTopOpenloopInstanceDir() -> FilePath? {
-    dirsToHome().last(where: { dir in
+    Paths.dirsToHome().last(where: { dir in
         PathIO.isDirectoryExistent(atPath: dir.appending("openloop").string)
     })
 }
@@ -482,7 +477,7 @@ private func resolveAgent(
         )
     }
     let shortName = String(pa.trimmingPrefix("openloop_"))
-    if let hit = dirsToHome().first(where: { dir in
+    if let hit = Paths.dirsToHome().first(where: { dir in
         PathIO.isFileExistent(atPath: dir.appending("openloop").appending("bin").appending(shortName).string)
     }) {
         return .projectBin(
@@ -664,8 +659,8 @@ private func runGraph(
     : "- `cd ..` to the project root folder to begin the task, applying knowledge from guides in this folder"
 )
 \(hasContext
-    ? "- When done, save your findings to `/my/report.md`. Credit teammates for their input"
-    : "- When done, save your findings to `/my/report.md`"
+    ? "- When done, save your findings to `_my/report.md` in the project root folder. Credit teammates for their input"
+    : "- When done, save your findings to `_my/report.md` in the project root folder"
 )
 """
 
@@ -723,7 +718,6 @@ private func runGraph(
                 took: Int(tb.intervalSinceInitialized),
                 startedAt: tb.startTime, endedAt: tb.now,
 
-                instancePath: Paths.curDir.string,
                 workflowId: workflowId,
                 personaId: from.realId,
 
@@ -739,7 +733,10 @@ private func runGraph(
                 session: session,
                 level: levelByPersonaId[from.id]
             )
-            try await FileLoader.saveRunLog(log)
+            try await FileLoader.saveRunLog(
+                log,
+                at: Paths.curDir.string
+            )
 
             guard success else {
                 throw ValidationError("Person (\(from.name)) step failed")

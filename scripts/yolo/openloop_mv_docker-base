@@ -122,8 +122,8 @@ if [ -n "$YOLO_STDIN" ] && [ -d "$YOLO_STDIN" ]; then
     YOLO_STDIN=""
 fi
 
-REPORT_DIR=$(mktemp -d)
-VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
+mkdir -p "$ROOT/_my"
+VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
 
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
@@ -131,25 +131,18 @@ VOLUME_MOUNTS+=(-v "$REPORT_DIR:/my")
 #     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
 
-read_report() {
-    local stdout="$1"
-    [ -s "$REPORT_DIR/report.md" ] && { cat "$REPORT_DIR/report.md"; rm -rf "$REPORT_DIR"; return; }
-    rm -rf "$REPORT_DIR"
-    echo "$stdout"
-}
+INNER_CMD="${OCRUN[2]} > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
+OCRUN=("bash" "-c" "$INNER_CMD")
 
 cleanup() {
     [ -n "$SYSTEM_PROMPT_TMP_DIR" ] && rm -rf "$SYSTEM_PROMPT_TMP_DIR"
-    rm -rf "$REPORT_DIR"
 }
 trap cleanup EXIT
 
-OC_OUTPUT=$($DOCKER run --rm \
+$DOCKER run --rm \
     --init --pids-limit=500 \
     -v /etc/localtime:/etc/localtime:ro \
     -e "PROMPT=${PROMPT}" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
-    $IMAGE "${OCRUN[@]}"); OC_EXIT=$?
-read_report "$OC_OUTPUT"
-exit $OC_EXIT
+    $IMAGE "${OCRUN[@]}"

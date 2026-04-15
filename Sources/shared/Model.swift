@@ -81,7 +81,6 @@ public struct RunLog: Codable {
     public let startedAt: Double
     public let endedAt: Double
 
-    public let instancePath: String
     public let workflowId: String
     public let personaId: String?
 
@@ -118,7 +117,7 @@ public struct RunLog: Codable {
     public init(
         success: Bool,
         took: Int, startedAt: Double, endedAt: Double,
-        instancePath: String, workflowId: String, personaId: String?,
+        workflowId: String, personaId: String?,
         agent: String, msg: Message,
         session: String? = nil,
         level: Int? = nil
@@ -128,7 +127,6 @@ public struct RunLog: Codable {
         self.startedAt = startedAt
         self.endedAt = endedAt
 
-        self.instancePath = instancePath
         self.workflowId = workflowId
         self.personaId = personaId
 

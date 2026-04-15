@@ -50,6 +50,19 @@ public struct Paths {
 //        .appending("state")
     public static let share = local
         .appending("share")
+
+    public static func dirsToHome() -> [FilePath] {
+        let home = FilePath(NSHomeDirectory())
+        var cur = curDir
+        var result: [FilePath] = []
+        while cur != home {
+            result.append(cur)
+            let parent = cur.removingLastComponent()
+            guard parent != cur else { break }
+            cur = parent
+        }
+        return result
+    }
 }
 
 // MARK: -
