@@ -152,6 +152,10 @@ fi
 
 mkdir -p "$ROOT/_my"
 VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
+if [ "$PARENT" != "$ROOT" ]; then
+    mkdir -p "$PARENT/_my"
+    VOLUME_MOUNTS+=(--tmpfs "$PARENT/_my:uid=1000,gid=1000")
+fi
 
 if [ -n "$MODE" ]; then
     OC_CMD="opencode run \"\$PROMPT\" --agent \"$MODE\""
@@ -159,7 +163,7 @@ else
     OC_CMD="opencode run \"\$PROMPT\""
 fi
 
-INNER_CMD="opencode models --refresh >/dev/null 2>&1; $OC_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
+INNER_CMD="opencode models --refresh >/dev/null 2>&1; $OC_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || { [ -s \"$PARENT/_my/report.md\" ] && cat \"$PARENT/_my/report.md\" || cat /tmp/_cc_out; }"
 OCRUN=("bash" "-c" "$INNER_CMD")
 
 

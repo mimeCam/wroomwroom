@@ -187,6 +187,10 @@ fi
 
 mkdir -p "$ROOT/_my"
 VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
+if [ "$PARENT" != "$ROOT" ]; then
+    mkdir -p "$PARENT/_my"
+    VOLUME_MOUNTS+=(--tmpfs "$PARENT/_my:uid=1000,gid=1000")
+fi
 
 # Build claude command following yolo_claude.sh pattern
 SKIP_PERMISSIONS_FLAG=""
@@ -216,7 +220,7 @@ if [ -n "$SYSTEM_PROMPT" ]; then
     # --append-system-prompt \"\$SYSTEM_PROMPT\" \
 fi
 
-INNER_CMD="$CLAUDE_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
+INNER_CMD="$CLAUDE_CMD > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || { [ -s \"$PARENT/_my/report.md\" ] && cat \"$PARENT/_my/report.md\" || cat /tmp/_cc_out; }"
 
 if [ "$use_tier" = true ]; then
     $DOCKER run --rm \

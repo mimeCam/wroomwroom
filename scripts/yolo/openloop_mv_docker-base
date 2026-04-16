@@ -124,15 +124,19 @@ fi
 
 mkdir -p "$ROOT/_my"
 VOLUME_MOUNTS+=(--tmpfs "$ROOT/_my:uid=1000,gid=1000")
+if [ "$PARENT" != "$ROOT" ]; then
+    mkdir -p "$PARENT/_my"
+    VOLUME_MOUNTS+=(--tmpfs "$PARENT/_my:uid=1000,gid=1000")
+fi
 
 # if [ "${MODE}" == "plan" ]; then  # every persona asked to summarize to ~/_report.md now, even bottom level
-    OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
+    MVRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # else
-#     OCRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
+#     MVRUN=("bash" "-c" "vibe --prompt \"\$PROMPT\" --agent $MODE --output text")
 # fi
 
-INNER_CMD="${OCRUN[2]} > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || cat /tmp/_cc_out"
-OCRUN=("bash" "-c" "$INNER_CMD")
+INNER_CMD="${MVRUN[2]} > /tmp/_cc_out 2>/dev/null; [ -s \"$ROOT/_my/report.md\" ] && cat \"$ROOT/_my/report.md\" || { [ -s \"$PARENT/_my/report.md\" ] && cat \"$PARENT/_my/report.md\" || cat /tmp/_cc_out; }"
+MVRUN=("bash" "-c" "$INNER_CMD")
 
 cleanup() {
     [ -n "$SYSTEM_PROMPT_TMP_DIR" ] && rm -rf "$SYSTEM_PROMPT_TMP_DIR"
@@ -145,4 +149,4 @@ $DOCKER run --rm \
     -e "PROMPT=${PROMPT}" \
     "${VOLUME_MOUNTS[@]}" \
     -w "$PRJ" \
-    $IMAGE "${OCRUN[@]}"
+    $IMAGE "${MVRUN[@]}"
