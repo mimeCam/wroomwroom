@@ -62,6 +62,29 @@ struct ManualWorkflowInfo: Sendable, Content {
 
 struct ManualWorkflowHandler: Sendable {
 
+    func validate(req: Request) async throws -> Response {
+        guard let rawInstancePath = req.parameters.get("id") else {
+            throw Abort(.badRequest)
+        }
+        let instancePath = rawInstancePath.removingPercentEncoding ?? rawInstancePath
+        let body = try req.content.decode(ManualWorkflowLaunchRequest.self)
+
+        let roots = Paths.dirsToHome(from: FilePath(instancePath))
+        let errors = await WorkflowValidator.validate(
+            workflowId: body.workflow_id,
+            ask: body.ask,
+            roots: roots
+        )
+
+        let result = ManualWorkflowValidationResponse(
+            valid: errors.isEmpty,
+            errors: errors.map(\.description)
+        )
+        let response = Response(status: errors.isEmpty ? .ok : .unprocessableEntity)
+        try response.content.encode(result)
+        return response
+    }
+
     func launch(req: Request) async throws -> ManualWorkflowResponse {
         guard let rawInstancePath = req.parameters.get("id") else {
             throw Abort(.badRequest)
@@ -244,5 +267,10 @@ extension ManualWorkflowHandler {
     struct ManualWorkflowLaunchRequest: Content, Sendable {
         var workflow_id: String
         var ask: String?
+    }
+
+    struct ManualWorkflowValidationResponse: Content, Sendable {
+        var valid: Bool
+        var errors: [String]
     }
 }

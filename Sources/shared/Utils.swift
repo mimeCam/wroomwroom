@@ -54,8 +54,12 @@ public struct Paths {
     public static let globalShare = share
 
     public static func dirsToHome() -> [FilePath] {
+        dirsToHome(from: curDir)
+    }
+
+    public static func dirsToHome(from start: FilePath) -> [FilePath] {
         let home = FilePath(NSHomeDirectory())
-        var cur = curDir
+        var cur = start
         var result: [FilePath] = []
         while cur != home {
             result.append(cur)

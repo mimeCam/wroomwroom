@@ -43,49 +43,29 @@
             const url = `/api/instances/${encodeURIComponent(instance)}/logs/sessions/${encodeURIComponent(session)}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            render(await res.json(), instance, session);
+            render(await res.json());
         } catch (err) {
             showError(`Failed to load logs: ${err.message}`);
         }
     }
 
-    function render(data, instance, session) {
+    function render(data) {
         if (!data.logs || !data.logs.length) { showEmpty(); return; }
-        const params = new URLSearchParams(window.location.search);
-        const wfParam = params.get('workflowId');
-        const mainWorkflowId = wfParam || data.logs[0]?.workflowId;
-        let logs = filterByWorkflowId(data.logs, wfParam);
-        logs = filterOuterLog(logs, mainWorkflowId);
+        const logs = data.logs.filter(l => l.personaId != null);
         if (!logs.length) { showEmpty(); return; }
         renderToolbar(data);
         const { tiers, avg } = computeSpeedTiers(logs);
         currentTiers = tiers;
         document.getElementById('wl-avg-duration').textContent = `avg: ${formatDuration(avg)}`;
-        placeNodes(data.levels, logs, mainWorkflowId, instance, session, tiers);
+        placeNodes(data.levels, logs, tiers);
         const nodeMap = buildNodeMap();
         currentLogs = logs;
         currentNodeMap = nodeMap;
         requestAnimationFrame(() => {
             drawEdges(logs, nodeMap);
-            buildMinimap(data.levels, logs, mainWorkflowId, tiers);
+            buildMinimap(data.levels, logs, tiers);
             watchCanvasResize(() => drawEdges(logs, nodeMap));
         });
-    }
-
-    // ── Log classification ────────────────────────────────────────────────────
-    function classifyLog(log, mainWorkflowId) {
-        if (!log.personaId && log.workflowId === mainWorkflowId) return 'outer';
-        if (log.personaId) return 'persona';
-        return 'workflow';
-    }
-
-    function filterOuterLog(logs, mainWorkflowId) {
-        return logs.filter(l => classifyLog(l, mainWorkflowId) !== 'outer');
-    }
-
-    function filterByWorkflowId(logs, workflowId) {
-        if (!workflowId) return logs;
-        return logs.filter(l => l.workflowId === workflowId);
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -110,16 +90,15 @@
     }
 
     // ── Graph layout ──────────────────────────────────────────────────────────
-    function placeNodes(levels, logs, mainWorkflowId, instance, session, tiers) {
+    function placeNodes(levels, logs, tiers) {
         const grid     = document.getElementById('graph-grid');
         const lvs      = levels.length ? levels : deriveLevels(logs);
         const byLevel  = groupLogsByLevel(logs);
-        const colsHtml = lvs.map(lv => levelColumn(lv, byLevel.get(lv.levelIndex) || [], mainWorkflowId, tiers)).join('');
+        const colsHtml = lvs.map(lv => levelColumn(lv, byLevel.get(lv.levelIndex) || [], tiers)).join('');
         grid.innerHTML = `<svg id="edge-layer"></svg>${colsHtml}`;
         buildLogMap(logs);
         bindCopyButtons(grid);
         bindCardHover(grid);
-        bindInnerWorkflowClick(grid, instance, session);
         bindCardClick(grid);
     }
 
@@ -142,33 +121,24 @@
         return map;
     }
 
-    function levelColumn(lv, logs, mainWorkflowId, tiers) {
+    function levelColumn(lv, logs, tiers) {
         const header = `<div class="col-header">${escHtml(lv.label)}</div>`;
-        const cards  = logs.map(log => renderNodeCard(log, mainWorkflowId, tiers)).join('');
+        const cards  = logs.map(log => renderNodeCard(log, tiers)).join('');
         return `<div class="level-col" data-level="${lv.levelIndex}">${header}${cards}</div>`;
     }
 
-    function renderNodeCard(log, mainWorkflowId, tiers) {
-        const type       = classifyLog(log, mainWorkflowId);
-        const name       = log.personaId || log.workflowId || 'unknown';
-        const isWorkflow = type === 'workflow';
-        const cls        = isWorkflow ? 'is-workflow' : 'is-persona';
-        const wfAttr     = isWorkflow ? ` data-workflow-id="${escHtml(log.workflowId)}"` : '';
-        const speedAttr  = (!isWorkflow && tiers) ? ` data-speed="${tiers.get(name) || 'blue'}"` : '';
+    function renderNodeCard(log, tiers) {
+        const name       = log.personaId || 'unknown';
+        const speedAttr  = tiers ? ` data-speed="${tiers.get(name) || 'blue'}"` : '';
         const body       = nodeCardBody();
         const bodyHtml   = body ? `<div class="node-card-body">${body}</div>` : '';
-        return `<div class="node-card ${cls}" data-persona-id="${escHtml(name)}"${wfAttr}${speedAttr}>${nodeCardHeader(log, name, isWorkflow)}${bodyHtml}</div>`;
+        return `<div class="node-card is-persona" data-persona-id="${escHtml(name)}"${speedAttr}>${nodeCardHeader(log, name)}${bodyHtml}</div>`;
     }
 
-    function nodeCardHeader(log, name, isWorkflow) {
-        const avatar = isWorkflow
-            ? `<div class="node-card-avatar is-workflow">${escHtml(name.charAt(0).toUpperCase())}</div>`
-            : `<div class="node-card-avatar is-persona">${personIcon()}</div>`;
-        const nameHtml = isWorkflow
-            ? `<span class="node-card-name">${escHtml(':' + name)}</span>`
-            : `<span class="node-card-name">${escHtml(name)}</span>`;
+    function nodeCardHeader(log, name) {
         return `<div class="node-card-header">` +
-            avatar + nameHtml +
+            `<div class="node-card-avatar is-persona">${personIcon()}</div>` +
+            `<span class="node-card-name">${escHtml(name)}</span>` +
             `<div class="node-card-meta"><span class="node-card-dur">${formatDuration(log.took)}</span></div>` +
             `</div>`;
     }
@@ -197,19 +167,10 @@
         });
     }
 
-    function bindInnerWorkflowClick(container, instance, session) {
-        container.querySelectorAll('.node-card.is-workflow').forEach(card => {
-            card.addEventListener('click', () => {
-                const wfId = card.dataset.workflowId;
-                window.open(`workflow-log.html?instance=${encodeURIComponent(instance)}&session=${encodeURIComponent(session)}&workflowId=${encodeURIComponent(wfId)}`, '_blank');
-            });
-        });
-    }
-
     // ── Log map ───────────────────────────────────────────────────────────────
     function buildLogMap(logs) {
         logMap = new Map();
-        for (const log of logs) logMap.set(log.personaId || log.workflowId || 'unknown', log);
+        for (const log of logs) logMap.set(log.personaId, log);
     }
 
     // ── Detail panel ──────────────────────────────────────────────────────────
@@ -257,14 +218,10 @@
     }
 
     function renderDetailHeader(log) {
-        const name      = escHtml(log.personaId || log.workflowId || 'unknown');
-        const accentCls = log.workflowId && !log.personaId ? 'is-workflow' : '';
-        const avatar    = log.personaId
-            ? `<div class="node-card-avatar is-persona">${personIcon()}</div>`
-            : `<div class="node-card-avatar is-workflow">${escHtml(name.charAt(0).toUpperCase())}</div>`;
+        const name = escHtml(log.personaId || 'unknown');
         return `<div class="detail-panel-header">` +
-               `<div class="detail-panel-accent ${accentCls}"></div>` +
-               `${avatar}` +
+               `<div class="detail-panel-accent"></div>` +
+               `<div class="node-card-avatar is-persona">${personIcon()}</div>` +
                `<div class="detail-panel-title">` +
                `<div class="detail-panel-name">${name}</div>` +
                `<div class="detail-panel-meta">${formatDuration(log.took)}</div>` +
@@ -308,7 +265,7 @@
     }
 
     function drawLogEdges(log, nodeMap, svg) {
-        const toId = log.personaId || log.workflowId || 'unknown';
+        const toId = log.personaId;
         const toEl = nodeMap.get(toId);
         if (!toEl) return;
         (log.msg.parents || []).forEach(p => {
@@ -405,11 +362,11 @@
     }
 
     // ── Mini-map ──────────────────────────────────────────────────────────────
-    function buildMinimap(levels, logs, mainWorkflowId, tiers) {
+    function buildMinimap(levels, logs, tiers) {
         const map        = document.getElementById('minimap');
         const workflowId = logs[0]?.workflowId || 'Workflow';
         const lvs        = levels.length ? levels : deriveLevels(logs);
-        const groups     = groupPersonasByLevel(lvs, logs, mainWorkflowId);
+        const groups     = groupPersonasByLevel(lvs, logs);
         const groupsHtml = lvs.map(lv => minimapLevelGroup(lv, groups.get(lv.levelIndex) || [], tiers)).join('');
         map.innerHTML    = minimapHtml(workflowId, groupsHtml);
         wireMinimapDots(map);
@@ -457,23 +414,20 @@
 
     function minimapLevelGroup(lv, entries, tiers) {
         const dots = entries.map(e => {
-            const wfCls  = e.isWorkflow ? ' is-workflow' : '';
-            const tier   = (!e.isWorkflow && tiers) ? tiers.get(e.id) : null;
+            const tier = tiers ? tiers.get(e.id) : null;
             const spdAttr = tier ? ` data-speed="${tier}"` : '';
-            return `<button class="mm-persona-dot${wfCls}" data-persona-id="${escHtml(e.id)}"${spdAttr}>${escHtml(e.id.slice(0, 6))}</button>`;
+            return `<button class="mm-persona-dot" data-persona-id="${escHtml(e.id)}"${spdAttr}>${escHtml(e.id.slice(0, 6))}</button>`;
         }).join('');
         return `<div class="mm-level-group"><div class="mm-level-label">${escHtml(lv.label)}</div>${dots}</div>`;
     }
 
-    function groupPersonasByLevel(levels, logs, mainWorkflowId) {
+    function groupPersonasByLevel(levels, logs) {
         const result = new Map();
         for (const lv of levels) result.set(lv.levelIndex, []);
         for (const log of logs) {
             const key = log.level ?? 0;
             if (!result.has(key)) result.set(key, []);
-            const id = log.personaId || log.workflowId || 'unknown';
-            const isWorkflow = classifyLog(log, mainWorkflowId) === 'workflow';
-            result.get(key).push({ id, isWorkflow });
+            result.get(key).push({ id: log.personaId || 'unknown' });
         }
         return result;
     }
@@ -543,7 +497,7 @@
         const avg = logs.reduce((s, l) => s + l.took, 0) / logs.length;
         const tiers = new Map();
         for (const log of logs) {
-            const key = log.personaId || log.workflowId || 'unknown';
+            const key = log.personaId;
             if (log.took < avg * 0.5)      tiers.set(key, 'green');
             else if (log.took <= avg * 1.5) tiers.set(key, 'blue');
             else                            tiers.set(key, 'red');
@@ -598,6 +552,7 @@
         checkFormatDuration();
         checkRenderDetailHeader();
         checkRenderDetailBubbles();
+        checkInnerPersonaFilter();
         console.log('All sanity checks passed.');
     }
 
@@ -608,9 +563,9 @@
     }
 
     function checkBuildLogMap() {
-        buildLogMap([{ personaId: 'Alice' }, { workflowId: 'W1' }]);
+        buildLogMap([{ personaId: 'Alice' }, { personaId: 'Bob' }]);
         console.assert(logMap.get('Alice')?.personaId === 'Alice', 'logMap: Alice missing');
-        console.assert(logMap.get('W1')?.workflowId   === 'W1',   'logMap: W1 missing');
+        console.assert(logMap.get('Bob')?.personaId   === 'Bob',   'logMap: Bob missing');
         console.log('OK: buildLogMap');
     }
 
@@ -640,6 +595,20 @@
         console.assert(html.includes('RESULT'),  'renderDetailBubbles: RESULT missing');
         console.assert(html.includes('CONTEXT'), 'renderDetailBubbles: CONTEXT missing');
         console.log('OK: renderDetailBubbles');
+    }
+
+    function checkInnerPersonaFilter() {
+        const logs = [
+            { workflowId: 'MainWF', personaId: null },
+            { workflowId: 'MainWF', personaId: 'Alice' },
+            { workflowId: 'Inner', personaId: null },
+            { workflowId: 'Inner', personaId: 'Charlie' },
+        ];
+        const filtered = logs.filter(l => l.personaId != null);
+        console.assert(filtered.length === 2, 'filter: expected 2');
+        console.assert(filtered[0].personaId === 'Alice', 'filter: Alice');
+        console.assert(filtered[1].personaId === 'Charlie', 'filter: Charlie');
+        console.log('OK: innerPersonaFilter');
     }
 
     // ── Boot ──────────────────────────────────────────────────────────────────

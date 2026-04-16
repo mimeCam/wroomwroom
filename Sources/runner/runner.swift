@@ -75,7 +75,8 @@ private func readPipedStdin() throws -> String? {
 private func start(
     _ workflow: String, ask: String?,
     context: String?, contextParents: [RunLog.Message.Parent],
-    session: String
+    session: String,
+    levelOffset: Int = 0
 ) async throws -> String {
     let w = try await FileLoader.loadWorkflowById(workflow)
     guard let w else {
@@ -124,7 +125,8 @@ private func start(
             workflow,
             ask: validAsk,
             context: context,
-            session: session
+            session: session,
+            levelOffset: levelOffset
         )
 
         print(res) // MUST print to stdout so that openloop captures as a result.
@@ -160,8 +162,21 @@ private func start(
 
 private func runWorkflow(
     _ workflowId: String, ask: String,
-    context: String?, session: String
+    context: String?, session: String,
+    levelOffset: Int = 0
 ) async throws -> String {
+    let validationErrors = await WorkflowValidator.validate(
+        workflowId: workflowId,
+        ask: ask,
+        roots: Paths.dirsToHome()
+    )
+    if validationErrors.notEmpty {
+        throw ValidationError(
+            "Workflow tree validation failed:\n" +
+            validationErrors.map(\.description).joined(separator: "\n")
+        )
+    }
+
     let w = try await fetchWorkflow(by: workflowId)
     guard let w else {
         throw ValidationError("Could not load workflow: \(workflowId)")
@@ -235,7 +250,8 @@ private func runWorkflow(
         ask: ask,
         levels: runPersonas,
         outerContext: context,
-        session: session
+        session: session,
+        levelOffset: levelOffset
     )
     guard res.notEmpty else {
         throw ValidationError("Empty response from the llm-graph. LLM agent failed.")
@@ -524,7 +540,8 @@ private func runGraph(
     ask: String,
     levels: [[PreparedRunItem]],
     outerContext: String?,
-    session: String
+    session: String,
+    levelOffset: Int = 0
 ) async throws -> String {
     levels.forEach {
         assert($0.notEmpty)
@@ -553,7 +570,7 @@ private func runGraph(
     }
 
     let levelByPersonaId: [String: Int] = levels.enumerated().reduce(into: [:]) { res, pair in
-        pair.element.forEach { p in res[p.id] = pair.offset }
+        pair.element.forEach { p in res[p.id] = pair.offset + levelOffset }
     }
     @Sendable func runItemById(_ id: String) -> PreparedRunItem {
         assert(ps[id] != nil)
@@ -614,7 +631,8 @@ private func runGraph(
                         id: p.realId, text: msg
                     )
                 },
-                session: session
+                session: session,
+                levelOffset: levelByPersonaId[from.id]!
             )
             let success = res.notEmpty
 

@@ -144,6 +144,9 @@ func configure(_ app: Application) async throws {
     }
 
     // Manual workflows endpoints
+    instances.grouped(":id", "manual-workflows", "validate").post { req async throws in
+        try await ManualWorkflowHandler().validate(req: req)
+    }
     instances.grouped(":id", "manual-workflows").get { req async throws in
         try await ManualWorkflowHandler().getAll(req: req)
     }

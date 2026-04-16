@@ -83,7 +83,7 @@
         /* ── Graph canvas (scroll container) ── */
         #graph-canvas {
             position: fixed;
-            top: var(--toolbar-height); left: 230px; right: 0; bottom: 0;
+            top: var(--toolbar-height); left: 0; right: 0; bottom: 0;
             overflow: auto;
         }
         #graph-canvas::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -97,7 +97,7 @@
             align-items: center;
             gap: var(--row-gap);
             width: 100%;
-            padding: 24px 32px 60px;
+            padding: 24px 32px 60px 240px;
             position: relative;
             box-sizing: border-box;
             transition: zoom 0.35s ease;
@@ -167,7 +167,7 @@
             padding: 0 12px 0 0;
             border-right: 1px solid rgba(255,255,255,0.06);
             position: sticky;
-            left: 0;
+            left: 230px;
             z-index: 2;
             background: var(--bg-canvas);
             writing-mode: vertical-lr;
@@ -521,44 +521,14 @@
             padding: 0 24px;
         }
 
-        /* ── Workflow accent tokens ── */
-        :root {
-            --accent-wf:        #bf5af2;
-            --accent-wf-dim:    rgba(191,90,242,0.14);
-            --accent-wf-border: rgba(191,90,242,0.30);
-        }
-
         /* ── Persona avatar — person icon on blue/green gradient ── */
         .node-card-avatar.is-persona {
             background: linear-gradient(135deg, #0a84ff, #30d158);
         }
 
-        /* ── Workflow avatar — letter initial on purple tint ── */
-        .node-card-avatar.is-workflow {
-            background: rgba(191,90,242,0.22);
-            color: #bf5af2;
-        }
-
-        /* ── Workflow card — clickable with purple hover glow ── */
-        .node-card.is-workflow { cursor: pointer; }
-        .node-card.is-workflow:hover {
-            box-shadow: 0 4px 24px rgba(191,90,242,0.18), 0 0 0 1px rgba(191,90,242,0.22);
-        }
-
-        /* ── Minimap workflow dot — dashed purple border ── */
-        .mm-persona-dot.is-workflow {
-            background: rgba(191,90,242,0.10);
-            color: #bf5af2;
-            border: 1px dashed rgba(191,90,242,0.40);
-        }
-        .mm-persona-dot.is-workflow:hover { background: rgba(191,90,242,0.20); }
-
         /* ── Selected node ring ── */
         .node-card.selected {
             box-shadow: 0 0 0 2px var(--accent-green), 0 4px 24px rgba(52,199,89,0.22);
-        }
-        .node-card.selected.is-workflow {
-            box-shadow: 0 0 0 2px var(--accent-wf), 0 4px 24px rgba(191,90,242,0.22);
         }
 
         /* ── Detail panel ── */
@@ -611,7 +581,6 @@
             border-radius: 0;
             background: var(--accent-green);
         }
-        .detail-panel-accent.is-workflow { background: var(--accent-wf); }
         .detail-panel-title { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; padding-left: 6px; }
         .detail-panel-name {
             font-size: 14px; font-weight: 600;

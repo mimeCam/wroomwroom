@@ -610,6 +610,46 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    async function validateManualWorkflow(path, workflowId, ask) {
+        const response = await fetch(`/api/instances/${encodeURIComponent(path)}/manual-workflows/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflow_id: workflowId, ask: ask })
+        });
+        if (response.status === 422) {
+            const data = await response.json();
+            return { valid: false, errors: data.errors || [] };
+        }
+        if (!response.ok) {
+            throw new Error(`Could not reach server. Please try again.`);
+        }
+        return { valid: true, errors: [] };
+    }
+
+    function showValidationErrors(launcher, errors) {
+        const existing = launcher.querySelector('.launcher-validation-errors');
+        if (existing) existing.remove();
+
+        const errorsHtml = errors.length > 0
+            ? errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')
+            : '<li>Workflow verification failed. Check workflow configuration.</li>';
+
+        const panel = document.createElement('div');
+        panel.className = 'launcher-validation-errors';
+        panel.setAttribute('role', 'alert');
+        panel.innerHTML = `
+            <div class="error-title" aria-live="assertive">
+                <span class="error-icon">\u2717</span>
+                Workflow verification failed
+                <span class="info-icon" data-doc="workflow-levels" title="How levels work">ⓘ</span>
+            </div>
+            <ul>${errorsHtml}</ul>
+        `;
+
+        const actionsDiv = launcher.querySelector('.launcher-actions');
+        actionsDiv.parentNode.insertBefore(panel, actionsDiv);
+    }
+
     async function deleteManualWorkflow(path, runId, btn) {
         try {
             const response = await fetch(`/api/instances/${encodeURIComponent(path)}/manual-workflows/${encodeURIComponent(runId)}`, {
@@ -730,14 +770,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
+            const existingErrors = launcher.querySelector('.launcher-validation-errors');
+            if (existingErrors) existingErrors.remove();
+
             launchBtn.disabled = true;
-            launchBtn.textContent = 'Launching...';
+            launchBtn.innerHTML = '<span class="launcher-btn-spinner"></span> Verifying workflow\u2026';
 
             try {
+                const validation = await validateManualWorkflow(instancePath, workflowId, ask);
+
+                if (!validation.valid) {
+                    showValidationErrors(launcher, validation.errors);
+                    launchBtn.disabled = false;
+                    launchBtn.textContent = 'Launch';
+                    return;
+                }
+
+                launchBtn.innerHTML = '<span class="launcher-btn-spinner"></span> Launching\u2026';
                 await launchManualWorkflow(instancePath, workflowId, ask);
                 closeManualWorkflowLauncher();
 
-                // Refresh the manual workflows list
                 const instanceNode = document.querySelector('.instance-node[data-path="' + escapeHtml(instancePath) + '"]');
                 if (instanceNode) {
                     await loadManualWorkflowsForInstance(instancePath, instanceNode);
@@ -747,6 +799,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 launchBtn.disabled = false;
                 launchBtn.textContent = 'Launch';
             }
+        });
+
+        askInput.addEventListener('input', () => {
+            const errorPanel = launcher.querySelector('.launcher-validation-errors');
+            if (errorPanel) errorPanel.remove();
         });
 
         askInput.focus();
@@ -1699,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!href) return;
                 
                 const docName = href.replace(/\.md$/, '');
-                const knownDocs = ['persona', 'workflow', 'instance'];
+                const knownDocs = ['persona', 'workflow', 'workflow-levels', 'instance'];
                 
                 if (knownDocs.includes(docName)) {
                     e.preventDefault();
