@@ -211,7 +211,6 @@ CLAUDE_CMD="claude ${SKIP_PERMISSIONS_FLAG} \
     --disallowed-tools \"WebSearch,WebFetch,AskUserQuestion\" \
     --no-session-persistence \
     ${MCP_FLAGS} \
-    --model sonnet \
     -p \"\$PROMPT\""
     # --chrome
 
